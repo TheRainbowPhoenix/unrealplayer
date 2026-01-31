@@ -4,7 +4,7 @@
     import type { Synthesizer } from "js-synthesizer";
     import * as JSSynthModule from "js-synthesizer";
     import { Transposer, type Song, getMeasureTimes } from "./parser";
-    import { Button, Range, Label, Select } from "flowbite-svelte";
+    import { Button, Range, Label, Select, Drawer } from "flowbite-svelte";
     import {
         AdjustmentsVerticalSolid,
         PlaySolid,
@@ -28,7 +28,7 @@
     export let song: Song;
 
     // Local state for UI
-    let showControls = false;
+    let controlsVisible = false; // Drawer state
     let currentKey = song.key;
     let originalKey = song.key;
     let durationMap: { start: number; end: number; index: number }[] = [];
@@ -47,6 +47,10 @@
     // Metronome State
     let metronomeEnabled = false;
     let currentBeatIndex = -1;
+
+    // Volumes
+    let metronomeVolume = 0.5;
+    let accompanimentVolume = 0.5;
 
     // Key Grid
     const keyGrid = [
@@ -168,6 +172,9 @@
             synth.setPlayerTempo(1, $tempo);
         }
 
+        // Apply Gain
+        if (synth.setGain) synth.setGain(accompanimentVolume);
+
         // Only play player if we have a MIDI loaded
         if ($selectedMidi && $selectedMidi.path) {
             await synth.playPlayer();
@@ -197,6 +204,31 @@
         if (synth.setPlayerTempo) synth.setPlayerTempo(1, $tempo);
     }
 
+    // Reactive Volume
+    $: if (synth && isSynthReady) {
+        if (synth.setGain) synth.setGain(accompanimentVolume);
+    }
+
+    function playMetronomeClick() {
+        if (!audioContext) return;
+        const t = audioContext.currentTime;
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+
+        osc.connect(gain);
+        gain.connect(audioContext.destination);
+
+        // Woodblock-ish tone
+        osc.frequency.setValueAtTime(800, t);
+        osc.frequency.exponentialRampToValueAtTime(400, t + 0.05);
+
+        gain.gain.setValueAtTime(metronomeVolume, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+        osc.start(t);
+        osc.stop(t + 0.05);
+    }
+
     // Repeat State
     let currentRepeat = 1;
 
@@ -206,27 +238,13 @@
         const now = performance.now();
         let elapsed = (now - startTime) / 1000;
 
-        // Handle Repeats / Total Duration
+        // Update Playback Time
         if (elapsed >= totalDuration) {
             if (currentRepeat < $repeats) {
                 currentRepeat++;
-                // Reset time for next repeat
                 startTime = now;
                 elapsed = 0;
                 currentBeatIndex = -1;
-                // Ideally restart synth playback if it's a backing track that finished?
-                // Or just let it keep playing if it's a loop.
-                // For safety with generic MIDI files, let's just let it run or restart if needed.
-                // We won't restart synth here to avoid gaps/artifacts if the midi file is long.
-                // Note: Synth player repeats?
-                // js-synthesizer player has setPlayerLoop.
-                // We should use that if possible.
-                // synth.setPlayerLoop($repeats)?
-                // If we use setPlayerLoop, we don't need to manually restart visuals?
-                // But we are managing the timeline manually for visuals.
-                // Let's assume the synth continues because we didn't stop it and it loops?
-                // Wait, if setPlayerLoop is NOT set, it stops at end.
-                // We should setPlayerLoop logic or just simply seekPlayer(0) on repeat?
                 try {
                     synth.seekPlayer(0);
                 } catch (e) {}
@@ -239,16 +257,12 @@
         playbackTime.set(elapsed);
 
         // Metronome Click
-        if (metronomeEnabled && isSynthReady) {
+        if (metronomeEnabled) {
             const beatDur = 60 / $tempo;
             const beatIndex = Math.floor(elapsed / beatDur);
             if (beatIndex > currentBeatIndex) {
                 currentBeatIndex = beatIndex;
-                // Channel 9 (drums), Note 76 (Woodblock High), Vel 100
-                try {
-                    synth.midiNoteOn(9, 76, 100);
-                    setTimeout(() => synth.midiNoteOff(9, 76), 100);
-                } catch (e) {}
+                playMetronomeClick();
             }
         }
 
@@ -259,7 +273,6 @@
         if (found) {
             currentMeasureIndex.set(found.index);
         } else {
-            // Should not happen if within duration, but maybe end?
             if (elapsed < 0) currentMeasureIndex.set(0);
             else currentMeasureIndex.set(-1);
         }
@@ -319,252 +332,266 @@
     }
 </script>
 
+<!-- Floating Action Buttons -->
 <div
-    class="fixed bottom-0 right-0 z-40 flex flex-col items-end pointer-events-none"
+    class="fixed bottom-0 right-0 z-30 flex flex-col items-end pointer-events-none p-4"
 >
-    <!-- Floating Action Buttons when Closed -->
-    {#if !showControls}
-        <div class="pointer-events-auto mr-4 mb-4 flex flex-col gap-3">
+    <div class="pointer-events-auto flex flex-col gap-3">
+        <Button
+            pill
+            color="blue"
+            class="!p-4 shadow-xl border-2 border-blue-400 transform hover:scale-110 transition-transform"
+            onclick={togglePlay}
+        >
+            {#if $isPlaying}
+                <PauseSolid class="w-6 h-6 text-white" />
+            {:else}
+                <PlaySolid class="w-6 h-6 text-white" />
+            {/if}
+        </Button>
+        <Button
+            pill
+            color="dark"
+            class="!p-4 shadow-xl border border-gray-600 transform hover:scale-110 transition-transform"
+            onclick={() => (controlsVisible = true)}
+        >
+            <AdjustmentsVerticalSolid class="w-6 h-6 text-white" />
+        </Button>
+    </div>
+</div>
+
+<!-- Bottom Drawer Controls -->
+<Drawer
+    placement="bottom"
+    bind:open={controlsVisible}
+    class="bg-gray-900 border-t border-gray-700 p-0"
+    transitionParams={{ duration: 300 }}
+>
+    <div
+        class="w-full max-w-4xl mx-auto p-6 flex flex-col gap-6 h-[80vh] md:h-auto overflow-y-auto"
+    >
+        <!-- Header / Close -->
+        <div class="flex justify-between items-start">
+            <div>
+                <h3 class="text-xl font-bold text-white tracking-tight">
+                    {song.title}
+                </h3>
+                <p class="text-sm text-gray-400">
+                    {song.composer} • {song.style}
+                </p>
+            </div>
+        </div>
+
+        <!-- Scrubber -->
+        <div class="w-full">
+            <div class="flex justify-between text-xs text-gray-400 mb-1">
+                <span
+                    >{Math.floor($playbackTime / 60)}:{Math.floor(
+                        $playbackTime % 60,
+                    )
+                        .toString()
+                        .padStart(2, "0")}</span
+                >
+                <span
+                    >{Math.floor(totalDuration / 60)}:{Math.floor(
+                        totalDuration % 60,
+                    )
+                        .toString()
+                        .padStart(2, "0")}</span
+                >
+            </div>
+            <input
+                type="range"
+                min="0"
+                max={totalDuration || 1}
+                step="0.1"
+                value={$playbackTime}
+                oninput={onScrub}
+                class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+            />
+        </div>
+
+        <!-- Transport Controls -->
+        <div class="flex items-center justify-center gap-6">
+            <Button
+                color="alternative"
+                class="hover:text-blue-400 text-gray-300 border-none shadow-none"
+                onclick={stopPlayback}
+            >
+                <StopSolid class="w-8 h-8" />
+            </Button>
+
             <Button
                 pill
                 color="blue"
-                class="!p-4 shadow-xl border-2 border-blue-400 transform hover:scale-110 transition-transform"
+                class="!p-5 shadow-lg border-2 border-blue-400 scale-110"
                 onclick={togglePlay}
             >
                 {#if $isPlaying}
-                    <PauseSolid class="w-6 h-6 text-white" />
+                    <PauseSolid class="w-8 h-8 text-white" />
                 {:else}
-                    <PlaySolid class="w-6 h-6 text-white" />
+                    <PlaySolid class="w-8 h-8 text-white pl-1" />
                 {/if}
             </Button>
-            <Button
-                pill
-                color="dark"
-                class="!p-4 shadow-xl border border-gray-600 transform hover:scale-110 transition-transform"
-                onclick={() => (showControls = true)}
-            >
-                <AdjustmentsVerticalSolid class="w-6 h-6 text-white" />
-            </Button>
         </div>
-    {/if}
 
-    <!-- Expanded Control Panel -->
-    {#if showControls}
+        <!-- Settings Grid -->
         <div
-            class="w-full md:w-[600px] lg:w-[800px] bg-gray-900 border-t border-l border-r border-gray-700 rounded-t-2xl shadow-2xl p-6 pointer-events-auto transition-transform duration-300 flex flex-col gap-6 mx-auto md:mr-4"
+            class="grid grid-cols-1 md:grid-cols-2 gap-8 bg-gray-800/50 p-4 rounded-xl border border-gray-700/50"
         >
-            <!-- Header / Close -->
-            <div class="flex justify-between items-start">
+            <!-- Tempo & Repeats -->
+            <div class="flex flex-col gap-4">
+                <!-- Tempo -->
                 <div>
-                    <h3 class="text-xl font-bold text-white tracking-tight">
-                        {song.title}
-                    </h3>
-                    <p class="text-sm text-gray-400">
-                        {song.composer} • {song.style}
-                    </p>
-                </div>
-                <Button
-                    color="dark"
-                    size="xs"
-                    class="!p-2"
-                    onclick={() => (showControls = false)}
-                >
-                    <span class="text-xl">×</span>
-                </Button>
-            </div>
-
-            <!-- Scrubber -->
-            <div class="w-full">
-                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                    <span
-                        >{Math.floor($playbackTime / 60)}:{Math.floor(
-                            $playbackTime % 60,
-                        )
-                            .toString()
-                            .padStart(2, "0")}</span
-                    >
-                    <span
-                        >{Math.floor(totalDuration / 60)}:{Math.floor(
-                            totalDuration % 60,
-                        )
-                            .toString()
-                            .padStart(2, "0")}</span
-                    >
-                </div>
-                <input
-                    type="range"
-                    min="0"
-                    max={totalDuration || 1}
-                    step="0.1"
-                    value={$playbackTime}
-                    oninput={onScrub}
-                    class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                />
-            </div>
-
-            <!-- Transport Controls -->
-            <div class="flex items-center justify-center gap-6">
-                <Button
-                    color="alternative"
-                    class="hover:text-blue-400 text-gray-300 border-none shadow-none"
-                    onclick={stopPlayback}
-                >
-                    <StopSolid class="w-8 h-8" />
-                </Button>
-
-                <Button
-                    pill
-                    color="blue"
-                    class="!p-5 shadow-lg border-2 border-blue-400 scale-110"
-                    onclick={togglePlay}
-                >
-                    {#if $isPlaying}
-                        <PauseSolid class="w-8 h-8 text-white" />
-                    {:else}
-                        <PlaySolid class="w-8 h-8 text-white pl-1" />
-                    {/if}
-                </Button>
-
-                <!-- Placeholder for Rewind/Forward if needed -->
-            </div>
-
-            <!-- Settings Grid -->
-            <div
-                class="grid grid-cols-1 md:grid-cols-2 gap-8 bg-gray-800/50 p-4 rounded-xl border border-gray-700/50"
-            >
-                <!-- Tempo & Repeats -->
-                <div class="flex flex-col gap-4">
-                    <!-- Tempo -->
-                    <div>
-                        <div class="flex justify-between items-center mb-2">
-                            <Label
-                                class="text-gray-400 text-xs font-bold uppercase tracking-wider"
-                                >Tempo</Label
-                            >
-                            <div class="flex gap-2 items-center">
-                                <span class="text-xl font-bold text-white"
-                                    >{$tempo}</span
-                                >
-                                <span class="text-xs text-gray-500">BPM</span>
-
-                                <Button
-                                    size="xs"
-                                    color={metronomeEnabled
-                                        ? "blue"
-                                        : "alternative"}
-                                    class="!px-2 !py-0.5"
-                                    onclick={() =>
-                                        (metronomeEnabled = !metronomeEnabled)}
-                                    title="Metronome"
-                                >
-                                    {#if metronomeEnabled}
-                                        <VolumeUpSolid
-                                            class="w-3 h-3 text-white"
-                                        />
-                                    {:else}
-                                        <VolumeDownSolid
-                                            class="w-3 h-3 text-gray-400"
-                                        />
-                                    {/if}
-                                </Button>
-
-                                <Button
-                                    size="xs"
-                                    color="light"
-                                    class="!px-2 !py-0.5 text-[10px] uppercase font-bold"
-                                    onclick={tapTempo}>TAP</Button
-                                >
-                            </div>
-                        </div>
-                        <Range
-                            min="40"
-                            max="360"
-                            bind:value={$tempo}
-                            size="sm"
-                            class="accent-blue-500"
-                        />
-                        <div class="flex justify-between mt-1">
-                            <Button
-                                color="alternative"
-                                size="xs"
-                                class="text-gray-400 hover:text-white border-none shadow-none"
-                                onclick={() => $tempo--}>-</Button
-                            >
-                            <Button
-                                color="alternative"
-                                size="xs"
-                                class="text-gray-400 hover:text-white border-none shadow-none"
-                                onclick={() => $tempo++}>+</Button
-                            >
-                        </div>
-                    </div>
-
-                    <!-- Repeats -->
-                    <div>
-                        <div class="flex justify-between items-center mb-2">
-                            <Label
-                                class="text-gray-400 text-xs font-bold uppercase tracking-wider"
-                                >Repeats</Label
-                            >
+                    <div class="flex justify-between items-center mb-2">
+                        <Label
+                            class="text-gray-400 text-xs font-bold uppercase tracking-wider"
+                            >Tempo</Label
+                        >
+                        <div class="flex gap-2 items-center">
                             <span class="text-xl font-bold text-white"
-                                >{$repeats}x</span
+                                >{$tempo}</span
+                            >
+                            <span class="text-xs text-gray-500">BPM</span>
+
+                            <Button
+                                size="xs"
+                                color={metronomeEnabled
+                                    ? "blue"
+                                    : "alternative"}
+                                class="!px-2 !py-0.5"
+                                onclick={() =>
+                                    (metronomeEnabled = !metronomeEnabled)}
+                                title="Metronome"
+                            >
+                                {#if metronomeEnabled}
+                                    <VolumeUpSolid class="w-3 h-3 text-white" />
+                                {:else}
+                                    <VolumeDownSolid
+                                        class="w-3 h-3 text-gray-400"
+                                    />
+                                {/if}
+                            </Button>
+
+                            <Button
+                                size="xs"
+                                color="light"
+                                class="!px-2 !py-0.5 text-[10px] uppercase font-bold"
+                                onclick={tapTempo}>TAP</Button
                             >
                         </div>
-                        <Range
-                            min="1"
-                            max="10"
-                            bind:value={$repeats}
-                            size="sm"
-                        />
+                    </div>
+                    <Range
+                        min="40"
+                        max="360"
+                        bind:value={$tempo}
+                        size="sm"
+                        class="accent-blue-500"
+                    />
+                    <div class="flex justify-between mt-1">
+                        <Button
+                            color="alternative"
+                            size="xs"
+                            class="text-gray-400 hover:text-white border-none shadow-none"
+                            onclick={() => $tempo--}>-</Button
+                        >
+                        <Button
+                            color="alternative"
+                            size="xs"
+                            class="text-gray-400 hover:text-white border-none shadow-none"
+                            onclick={() => $tempo++}>+</Button
+                        >
                     </div>
                 </div>
 
-                <!-- Style & Key -->
-                <div class="flex flex-col gap-4">
-                    <!-- MIDI Style Select -->
+                <!-- Repeats -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <Label
+                            class="text-gray-400 text-xs font-bold uppercase tracking-wider"
+                            >Repeats</Label
+                        >
+                        <span class="text-xl font-bold text-white"
+                            >{$repeats}x</span
+                        >
+                    </div>
+                    <Range min="1" max="10" bind:value={$repeats} size="sm" />
+                </div>
+            </div>
+
+            <!-- Style & Mix -->
+            <div class="flex flex-col gap-4">
+                <!-- Accompaniment Select -->
+                <div>
+                    <Label
+                        class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2"
+                        >Accompaniment</Label
+                    >
+                    <Select
+                        items={midiFiles.map((m: any) => ({
+                            value: m,
+                            name: m.name,
+                        }))}
+                        bind:value={$selectedMidi}
+                        size="sm"
+                        class="bg-gray-800 border-gray-600 text-white"
+                    />
+                </div>
+
+                <!-- Volume Mix -->
+                <div class="grid grid-cols-2 gap-4">
                     <div>
                         <Label
-                            class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2"
-                            >Accompaniment</Label
+                            class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1"
+                            >Backing Vol</Label
                         >
-                        <Select
-                            items={midiFiles.map((m: any) => ({
-                                value: m,
-                                name: m.name,
-                            }))}
-                            bind:value={$selectedMidi}
+                        <Range
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            bind:value={accompanimentVolume}
                             size="sm"
-                            class="bg-gray-800 border-gray-600 text-white"
                         />
                     </div>
-
-                    <!-- Key -->
                     <div>
-                        <div class="flex justify-between items-center mb-2">
-                            <Label
-                                class="text-gray-400 text-xs font-bold uppercase tracking-wider"
-                                >Key</Label
+                        <Label
+                            class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-1"
+                            >Click Vol</Label
+                        >
+                        <Range
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            bind:value={metronomeVolume}
+                            size="sm"
+                        />
+                    </div>
+                </div>
+
+                <!-- Key -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <Label
+                            class="text-gray-400 text-xs font-bold uppercase tracking-wider"
+                            >Key</Label
+                        >
+                        <span class="text-white font-bold">{currentKey}</span>
+                    </div>
+                    <div class="grid grid-cols-6 gap-1">
+                        {#each ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"] as k}
+                            <button
+                                class="text-[10px] sm:text-xs font-bold py-1.5 rounded transition-colors border
+                                {currentKey === k
+                                    ? 'bg-blue-600 border-blue-500 text-white'
+                                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}"
+                                onclick={() => transpose(k)}
                             >
-                            <span class="text-white font-bold"
-                                >{currentKey}</span
-                            >
-                        </div>
-                        <div class="grid grid-cols-6 gap-1">
-                            {#each ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"] as k}
-                                <button
-                                    class="text-[10px] sm:text-xs font-bold py-1.5 rounded transition-colors border
-                                    {currentKey === k
-                                        ? 'bg-blue-600 border-blue-500 text-white'
-                                        : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700'}"
-                                    onclick={() => transpose(k)}
-                                >
-                                    {k}
-                                </button>
-                            {/each}
-                        </div>
+                                {k}
+                            </button>
+                        {/each}
                     </div>
                 </div>
             </div>
         </div>
-    {/if}
-</div>
+    </div>
+</Drawer>
