@@ -46,14 +46,14 @@ jobs:
         run: pnpm install
         working-directory: ${{ env.BUILD_PATH }}
 
-      # ✅ Run your "build" script, but force Astro output to ./dist
+      # Build with correct base path for GitHub Pages
       - name: Build
         env:
-          BASE_PATH: '/${{ github.event.repository.name }}'
+          BASE_PATH: '/${{ github.event.repository.name }}/'
         working-directory: ${{ env.BUILD_PATH }}
-        run: pnpm run build
+        run: pnpm run build -- --base=$BASE_PATH
 
-      # ✅ Tell Pages to publish dist/
+      # Upload dist folder
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
