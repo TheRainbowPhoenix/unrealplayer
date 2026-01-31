@@ -4,3 +4,16 @@
 
 @source "../node_modules/flowbite-svelte/dist";
 @source "../node_modules/flowbite-svelte-icons/dist";
+
+@layer utilities {
+
+	/* Range Slider Thumb Styling */
+	input[type="range"]::-webkit-slider-thumb {
+		@apply w-4 h-4 bg-blue-500 rounded-full appearance-none cursor-pointer border-0;
+		/* Center thumb vertically if needed, but usually auto-aligned if track is handled */
+	}
+
+	input[type="range"]::-moz-range-thumb {
+		@apply w-4 h-4 bg-blue-500 rounded-full appearance-none cursor-pointer border-0;
+	}
+}

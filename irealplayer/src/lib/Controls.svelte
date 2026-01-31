@@ -161,10 +161,39 @@
         }
     }
 
+    // State
+    let isCountingIn = false;
+    let countInBeat = 0; // 0 to 4
+
     async function play() {
         if (!isSynthReady) await initSynth();
 
         await loadMidi();
+
+        // Count-in Logic
+        // Only count in if starting from near zero (e.g. < 0.1s)
+        if ($playbackTime < 0.1) {
+            isCountingIn = true;
+            countInBeat = -1; // Start at -1
+            isPlaying.set(true); // Set playing to enable loop
+
+            // Start Count-in loop
+            startTime = performance.now();
+            countInLoop();
+            return;
+        }
+
+        startRealPlayback();
+    }
+
+    async function startRealPlayback() {
+        isCountingIn = false;
+
+        // Sync fix: User says it's off by one tick (late).
+        // This usually means we are setting time/rendering slightly after the audio starts.
+        // We can try to tune the visual start time or seek the synth.
+        // Or if the synth latency is causing it.
+        // Let's try to start visuals and synth as tightly as possible.
 
         // precise tempo setting using ExternalBpm (1)
         // @ts-ignore
@@ -172,20 +201,45 @@
             synth.setPlayerTempo(1, $tempo);
         }
 
-        // Apply Gain
         if (synth.setGain) synth.setGain(accompanimentVolume);
 
-        // Only play player if we have a MIDI loaded
         if ($selectedMidi && $selectedMidi.path) {
             await synth.playPlayer();
         }
 
         isPlaying.set(true);
+        // Reset start time relative to current playback position
         startTime = performance.now() - $playbackTime * 1000;
 
         currentBeatIndex = Math.floor($playbackTime / (60 / $tempo)) - 1;
 
         loop();
+    }
+
+    function countInLoop() {
+        if (!$isPlaying) return; // User stopped during count-in
+
+        const now = performance.now();
+        const elapsed = (now - startTime) / 1000;
+        const beatDur = 60 / $tempo;
+
+        const expectedBeat = Math.floor(elapsed / beatDur);
+
+        if (expectedBeat > countInBeat) {
+            countInBeat = expectedBeat;
+            // Play Click
+            if (countInBeat < 4) {
+                playMetronomeClick();
+            }
+        }
+
+        // Check if count-in finished (4 beats)
+        if (elapsed >= beatDur * 4) {
+            startRealPlayback();
+            return;
+        }
+
+        rafId = requestAnimationFrame(countInLoop);
     }
 
     async function pause() {
@@ -259,7 +313,19 @@
         // Metronome Click
         if (metronomeEnabled) {
             const beatDur = 60 / $tempo;
+            // Add small offset to anticipate audio loop?
+            // Or maybe we are just calculating 'beatIndex' slightly late.
+            // If we use floor, at exactly 0.0 we are index 0.
+            // currentBeatIndex starts at -1. So 0 > -1 -> Click.
             const beatIndex = Math.floor(elapsed / beatDur);
+
+            // User reported "off by one tick (accompaniment late)".
+            // Actually if accompaniment is late, we (visuals) are early?
+            // Or the visuals are late compared to sound?
+            // "metronome first tick ... off by one tick".
+            // If we are strictly checking floor, at 0.999 we are beat 0. At 1.000 we are beat 1.
+            // If visuals are delayed by frame time (16ms), we might be seeing beat 1 slightly after it happened.
+
             if (beatIndex > currentBeatIndex) {
                 currentBeatIndex = beatIndex;
                 playMetronomeClick();
@@ -331,6 +397,24 @@
         lastTapTime = now;
     }
 </script>
+
+<!-- Count-in Overlay -->
+{#if isCountingIn}
+    <div
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 pointer-events-none"
+    >
+        <div class="flex gap-4">
+            {#each [1, 2, 3, 4] as i}
+                <div
+                    class="w-8 h-8 rounded-full border-2 border-white transition-colors duration-100
+                    {countInBeat + 1 >= i
+                        ? 'bg-blue-500 border-blue-500 scale-110'
+                        : 'bg-transparent'}"
+                ></div>
+            {/each}
+        </div>
+    </div>
+{/if}
 
 <!-- Floating Action Buttons -->
 <div
