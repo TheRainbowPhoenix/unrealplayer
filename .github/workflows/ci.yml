@@ -46,28 +46,18 @@ jobs:
         run: pnpm install
         working-directory: ${{ env.BUILD_PATH }}
 
-      # ✅ Run your "build" script, but force Astro output to ./build
+      # ✅ Run your "build" script, but force Astro output to ./dist
       - name: Build
         env:
           BASE_PATH: '/${{ github.event.repository.name }}'
         working-directory: ${{ env.BUILD_PATH }}
         run: pnpm run build
 
-      # ✅ Copy enc/ into build/ so it’s deployed as static assets
-      - name: Copy enc assets into build
-        working-directory: ${{ env.BUILD_PATH }}
-        run: |
-          if [ -d "enc" ]; then
-            mkdir -p build
-            rm -rf build/enc
-            cp -R enc build/enc
-          fi
-
-      # ✅ Tell Pages to publish build/
+      # ✅ Tell Pages to publish dist/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ${{ env.BUILD_PATH }}/build
+          path: ${{ env.BUILD_PATH }}/dist
 
   deploy:
     environment:
