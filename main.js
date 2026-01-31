@@ -20,19 +20,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            // Instantiate the parser (from parser.js global scope)
-            if (typeof iRealRenderer === 'undefined') {
+            // Instantiate from global iRealPro
+            if (typeof iRealPro === 'undefined') {
                 throw new Error("Parser library not loaded correctly.");
             }
 
-            const renderer = new iRealRenderer();
-            console.log("Parsing...");
+            const { Parser, Renderer } = iRealPro;
 
-            const songData = renderer.parse(url);
+            const parser = new Parser();
+            const renderer = new Renderer();
+
+            console.log("Parsing...");
+            const songData = parser.parse(url);
             console.log("Parsed Data:", songData);
 
-            const svgString = renderer.renderSVG(songData);
-
+            const svgString = renderer.render(songData);
             output.innerHTML = svgString;
 
         } catch (e) {
