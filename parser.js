@@ -53,64 +53,64 @@
                 dataString = decoded;
             }
 
-            // Handle multiple songs (only take the first one for now)
-            const songs = dataString.split("===");
-            const firstSongData = songs[0];
+            // Handle multiple songs
+            const songsData = dataString.split("===");
+            const songs = [];
 
-            const components = firstSongData.split("=");
+            for (const songData of songsData) {
+                if (!songData.trim()) continue;
 
-            // Heuristic to find fields
-            // Standard: Title=Composer=Style=Key=n=Music
-            // But sometimes there are extra empty fields.
-            // We know the last field (or the one starting with 1r34) is likely the music.
+                // Standard: Title=Composer=Style=Key=n=Music
+                const components = songData.split("=");
 
-            let title = components[0];
-            let composer = components[1];
-            let style = "Unknown";
-            let key = "C";
-            let rawMusic = "";
+                let title = components[0];
+                let composer = components[1];
+                let style = "Unknown";
+                let key = "C";
+                let rawMusic = "";
 
-            // Find music string
-            let musicIndex = -1;
-            for (let i = 0; i < components.length; i++) {
-                if (components[i].startsWith("1r34LbKcu7")) {
-                    musicIndex = i;
-                    break;
+                // Find music string by prefix 1r34...
+                let musicIndex = -1;
+                for (let i = 0; i < components.length; i++) {
+                    if (components[i] && components[i].startsWith("1r34LbKcu7")) {
+                        musicIndex = i;
+                        break;
+                    }
+                }
+
+                if (musicIndex !== -1) {
+                    rawMusic = components[musicIndex];
+                    // Attempt to extract Key/Style if positioned before music
+                    // Assuming format ...=Style=Key=n=Music
+                    if (musicIndex >= 3) {
+                        // Check components before music
+                        if (components[musicIndex - 2]) key = components[musicIndex - 2];
+                        if (components[musicIndex - 3]) style = components[musicIndex - 3];
+                    }
+                } else {
+                    // Fallback for non-obfuscated standard format
+                    if (components.length >= 6) {
+                        // Title=0, Composer=1, Style=2, Key=3, n=4, Music=5...
+                        style = components[2];
+                        key = components[3];
+                        rawMusic = components.slice(5).join("=");
+                    }
+                }
+
+                if (rawMusic) {
+                    const music = this.unscramble(rawMusic);
+                    const song = new Song(title, composer, style, key, music);
+                    song.systems = this.parseProgression(song.musicString);
+                    songs.push(song);
                 }
             }
-
-            if (musicIndex !== -1) {
-                rawMusic = components[musicIndex];
-                // Try to guess valid Style/Key before music
-                // Usually Key is just before 'n' (which is just before Music), or 2 slots before Music.
-                // Format: ... =Style=Key=n=Music
-                if (musicIndex >= 3) {
-                    // Check if musicIndex-1 is empty (the 'n' field?)
-                    // It seems structure is: Title=Composer=Info?=Style=Key=n=Music
-                    if (components[musicIndex - 2]) key = components[musicIndex - 2];
-                    if (components[musicIndex - 3]) style = components[musicIndex - 3];
-                }
-            } else {
-                // Fallback for non-obfuscated or standard irealbook://
-                if (components.length >= 6) {
-                    style = components[2];
-                    key = components[3];
-                    rawMusic = components.slice(5).join("=");
-                }
-            }
-
-            const music = this.unscramble(rawMusic);
-
-            const song = new Song(title, composer, style, key, music);
-
-            // Parse the chord progression
-            song.systems = this.parseProgression(song.musicString);
-            return song;
+            return songs;
         }
 
         unscramble(data) {
             if (!data.startsWith("1r34LbKcu7") || data.length < 11) return data;
             let s = data.substring(10).split('');
+
             const reverse = (arr, start, maxRelIndex) => {
                 let count = Math.floor(maxRelIndex / 2);
                 for (let k = 0; k < count; k++) {
@@ -123,17 +123,26 @@
                     }
                 }
             };
-            // Modified loop condition to ensure last full block is processed
+
+            // Loop should include chunks even if they are exactly 50 or slightly less? 
+            // The original loop was i + 50 <= s.length, meaning we need at least 50 chars left?
+            // User snippet says: i + 51 < s.length (original).
+            // Let's stick to valid chunks. If < 50, no swap.
+            // Swapping logic is specific to 50 char blocks.
+
             for (let i = 0; i + 50 <= s.length; i += 50) {
                 reverse(s, i + 10, 29);
                 reverse(s, i + 5, 39);
                 reverse(s, i, 49);
             }
+
             let i = 0;
             while (i < s.length - 2) {
                 let c1 = s[i];
                 let c2 = s[i + 1];
                 let c3 = s[i + 2];
+
+                // Substitution table
                 if (c1 === 'X' && c2 === 'y' && c3 === 'Q') { s[i] = ' '; s[i + 1] = ' '; s[i + 2] = ' '; i += 3; continue; }
                 if (c1 === 'K' && c2 === 'c' && c3 === 'l') { s[i] = '|'; s[i + 1] = ' '; s[i + 2] = 'x'; i += 3; continue; }
                 if (c1 === 'L' && c2 === 'Z') { s[i] = ' '; s[i + 1] = '|'; i += 2; continue; }
@@ -165,6 +174,7 @@
                 }
 
                 // --- WRAPPING LOGIC ---
+                // Wrap if at 16 cells and next item is a cell entry.
                 const isCellEntry = (char !== ' ' && !"|[]{ZTY*N<,sl".includes(char)) || char === ' ';
 
                 if (currentSystem.cells.length >= 16 && isCellEntry && char !== ',') {
@@ -252,7 +262,7 @@
 
                     if (token.length > 0) {
                         if (token === '}') {
-                            // Ignore stray brace to fix artifacts
+                            // Ignore stray brace
                         } else if (token === 'n') {
                             currentSystem.cells.push({ type: 'nc', content: 'N.C.' });
                         } else if (token === 'x') {
@@ -264,7 +274,6 @@
                         }
                     } else {
                         if (i === startI) {
-                            // Should not happen if logic is correct, but just in case
                             currentSystem.cells.push({ type: 'chord', content: raw[i] });
                             i++;
                         }

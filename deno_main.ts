@@ -26,9 +26,17 @@ try {
     const parser = new Parser();
     const renderer = new Renderer();
 
-    const songData = parser.parse(url);
+    const songs = parser.parse(url);
+    if (songs.length === 0) throw new Error("No songs found");
 
-    console.log(`Song Title: ${songData.title}`);
+    console.log(`Found ${songs.length} songs:`);
+    songs.forEach((s, i) => console.log(`${i + 1}: ${s.title} (${s.composer})`));
+
+    // By default render the first song, or look for specific one if needed
+    // Logic: If 'Blues - Jazz 1' exists, use it (for testing), otherwise first.
+    let songData = songs.find(s => s.title === "Blues - Jazz 1") || songs[0];
+
+    console.log(`\nRendering: ${songData.title}`);
     console.log(`Composer: ${songData.composer}`);
     console.log(`Raw Unscrambled Music: ${songData.musicString}`); // Print for debugging
 
