@@ -1,7 +1,5 @@
 /**
- * iReal Pro Parser and SVG Renderer
- * 
- * Separated into Parser and Renderer classes.
+ * iReal Pro Parser, Renderer, and Transposer
  */
 
 (function (root, factory) {
@@ -53,16 +51,13 @@
             for (const songData of songsData) {
                 if (!songData.trim()) continue;
 
-                // Standard: Title=Composer=Style=Key=n=Music
                 const components = songData.split("=");
-
                 let title = components[0];
                 let composer = components[1];
                 let style = "Unknown";
                 let key = "C";
                 let rawMusic = "";
 
-                // Find music string by prefix 1r34...
                 let musicIndex = -1;
                 for (let i = 0; i < components.length; i++) {
                     if (components[i] && components[i].startsWith("1r34LbKcu7")) {
@@ -73,20 +68,24 @@
 
                 if (musicIndex !== -1) {
                     rawMusic = components[musicIndex];
-                    // Attempt to extract Key/Style if positioned before music
-                    // Assuming format ...=Style=Key=n=Music
+                    if (musicIndex >= 1 && Transposer.KEYS[components[musicIndex - 1]]) {
+                        key = components[musicIndex - 1];
+                    } else if (musicIndex >= 2 && Transposer.KEYS[components[musicIndex - 2]]) {
+                        key = components[musicIndex - 2];
+                    }
                     if (musicIndex >= 3) {
-                        // Check components before music
-                        if (components[musicIndex - 2]) key = components[musicIndex - 2];
-                        if (components[musicIndex - 3]) style = components[musicIndex - 3];
+                        style = components[musicIndex - 3];
                     }
                 } else {
-                    // Fallback for non-obfuscated standard format
                     if (components.length >= 6) {
-                        // Title=0, Composer=1, Style=2, Key=3, n=4, Music=5...
                         style = components[2];
-                        key = components[3];
-                        rawMusic = components.slice(5).join("=");
+                        if (Transposer.KEYS[components[4]]) {
+                            key = components[4];
+                            rawMusic = components.slice(5).join("=");
+                        } else {
+                            key = components[3];
+                            rawMusic = components.slice(5).join("=");
+                        }
                     }
                 }
 
@@ -117,12 +116,6 @@
                 }
             };
 
-            // Loop should include chunks even if they are exactly 50 or slightly less? 
-            // The original loop was i + 50 <= s.length, meaning we need at least 50 chars left?
-            // User snippet says: i + 51 < s.length (original).
-            // Let's stick to valid chunks. If < 50, no swap.
-            // Swapping logic is specific to 50 char blocks.
-
             for (let i = 0; i + 50 <= s.length; i += 50) {
                 reverse(s, i + 10, 29);
                 reverse(s, i + 5, 39);
@@ -135,7 +128,6 @@
                 let c2 = s[i + 1];
                 let c3 = s[i + 2];
 
-                // Substitution table
                 if (c1 === 'X' && c2 === 'y' && c3 === 'Q') { s[i] = ' '; s[i + 1] = ' '; s[i + 2] = ' '; i += 3; continue; }
                 if (c1 === 'K' && c2 === 'c' && c3 === 'l') { s[i] = '|'; s[i + 1] = ' '; s[i + 2] = 'x'; i += 3; continue; }
                 if (c1 === 'L' && c2 === 'Z') { s[i] = ' '; s[i + 1] = '|'; i += 2; continue; }
@@ -145,10 +137,12 @@
         }
 
         parseProgression(raw) {
+            raw = raw.trimEnd();
             const measures = [];
             let currentMeasure = { start: '|', end: '|', events: [] };
             let startBarPending = '|';
             let hasContent = false;
+            let pendingEvents = [];
 
             let i = 0;
             const len = raw.length;
@@ -160,11 +154,12 @@
                     if (hasContent) {
                         currentMeasure.end = '|';
                         measures.push(currentMeasure);
+                        startBarPending = '|';
+                        currentMeasure = { start: startBarPending, end: '|', events: [...pendingEvents] };
+                        pendingEvents = [];
+                        hasContent = false;
                     }
                     measures.push({ type: 'break' });
-                    currentMeasure = { start: '|', end: '|', events: [] };
-                    startBarPending = '|';
-                    hasContent = false;
                     i++;
                     continue;
                 }
@@ -181,26 +176,34 @@
                         currentMeasure.end = type;
                         measures.push(currentMeasure);
                         startBarPending = type;
-                        currentMeasure = { start: startBarPending, end: '|', events: [] };
+                        currentMeasure = { start: startBarPending, end: '|', events: [...pendingEvents] };
+                        pendingEvents = [];
                         hasContent = false;
                     } else {
                         startBarPending = type;
                         currentMeasure.start = type;
+                        currentMeasure.events.push(...pendingEvents);
+                        pendingEvents = [];
                     }
                     i++;
                     continue;
                 }
 
                 if (char === 'T' && i + 2 < len && /\d/.test(raw[i + 1])) {
-                    currentMeasure.events.push({ type: 'time', value: raw.substring(i + 1, i + 3) });
+                    const evt = { type: 'time', value: raw.substring(i + 1, i + 3) };
+                    if (hasContent) pendingEvents.push(evt);
+                    else currentMeasure.events.push(evt);
                     i += 3; continue;
                 }
-                if (char === 'N' && i + 1 < len) {
-                    currentMeasure.events.push({ type: 'ending', value: raw[i + 1] });
+                if (char === '*' && i + 1 < len) {
+                    const evt = { type: 'rehearsal', value: raw[i + 1] };
+                    if (hasContent) pendingEvents.push(evt);
+                    else currentMeasure.events.push(evt);
                     i += 2; continue;
                 }
-                if (char === '*' && i + 1 < len) {
-                    currentMeasure.events.push({ type: 'rehearsal', value: raw[i + 1] });
+
+                if (char === 'N' && i + 1 < len) {
+                    currentMeasure.events.push({ type: 'ending', value: raw[i + 1] });
                     i += 2; continue;
                 }
                 if (char === '<') {
@@ -214,23 +217,19 @@
                 if (char === 'l') { currentMeasure.events.push({ type: 'normal' }); i++; continue; }
                 if (char === ',') { i++; continue; }
 
-                // --- CELL CONTENT ---
                 if (char === ' ') {
                     currentMeasure.events.push({ type: 'space' });
                     hasContent = true;
                     i++;
                 } else {
-                    // Tokenizer for Chord or Symbol
                     let token = "";
                     let startI = i;
-                    // Read until delimiter
                     while (i < len) {
                         const c = raw[i];
                         if (" []{}ZYT*N<,sl".includes(c)) break;
                         token += c;
                         i++;
                     }
-
                     if (token.length > 0) {
                         if (token === 'n') currentMeasure.events.push({ type: 'nc' });
                         else if (token === 'x') currentMeasure.events.push({ type: 'repeat-1' });
@@ -269,7 +268,6 @@
         render(song) {
             const { padding, systemWidth, systemHeight, systemSpacing, measureWidth, colors } = this.config;
 
-            // Build Systems
             const systems = [];
             let currentSystem = [];
 
@@ -287,9 +285,8 @@
             }
             if (currentSystem.length > 0) systems.push(currentSystem);
 
-            // Calculate Height
             const contentH = systems.length * (systemHeight + systemSpacing);
-            const totalHeight = contentH + padding + 100; // Extra for header
+            const totalHeight = contentH + padding + 100;
             const totalWidth = systemWidth + (padding * 2);
 
             let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" style="background-color: ${colors.bg}; font-family: 'Arial', sans-serif;">
@@ -337,31 +334,18 @@
         renderMeasure(measure, w, h) {
             let s = "";
 
-            // Bar Lines
-            // Draw Start Bar only if it's special (Start Repeat, Double Start) OR if it is the first measure of the system?
-            // Actually, we should draw the 'start' bar for every measure to ensure continuity, 
-            // BUT adjacent measures share lines.
-            // Convention: Draw 'start' bar. 
-            // Draw 'end' bar at x=w.
-
-            // Optimization: Only draw start bar if it's NOT 'single' (standard). Standard line is drawn by previous measure's end?
-            // But we are in a group.
-            // Let's render lines at 0 and at w.
-            // If we have adjacent measures, we might overdraw, which is fine in SVG.
-
             s += this.svgBarline(measure.start, 0, h);
             s += this.svgBarline(measure.end, w, h);
 
-            // Annotations (attached to measure, usually top-left)
-            // Filter events for annotations
             const annos = measure.events.filter(e => ['time', 'rehearsal', 'ending', 'text'].includes(e.type));
             const contentEvents = measure.events.filter(e => !['time', 'rehearsal', 'ending', 'text', 'small', 'normal', 'break'].includes(e.type));
 
-            // Render Annotations
             annos.forEach(a => {
                 if (a.type === 'time') {
-                    s += `<text x="-15" y="${(h / 2) - 4}" class="time-sig">${a.value[0]}</text>`;
-                    s += `<text x="-15" y="${(h / 2) + 21}" class="time-sig">${a.value[1]}</text>`;
+                    // Render "before" the barline (negative x) with a divider line
+                    s += `<text x="-20" y="${(h / 2) - 4}" class="time-sig">${a.value[0]}</text>`;
+                    s += `<line x1="-30" y1="${(h / 2) + 5}" x2="-10" y2="${(h / 2) + 5}" stroke="black" stroke-width="2"/>`;
+                    s += `<text x="-20" y="${(h / 2) + 21}" class="time-sig">${a.value[1]}</text>`;
                 }
                 if (a.type === 'rehearsal') {
                     s += `<rect x="-5" y="-35" width="24" height="24" fill="black"/>`;
@@ -376,13 +360,12 @@
                 }
             });
 
-            // Content Layout
             const slotCount = Math.max(4, contentEvents.length);
             const slotW = w / slotCount;
             const chordY = (h / 2) + 15;
 
             contentEvents.forEach((e, i) => {
-                const cx = (i * slotW) + 5; // padding
+                const cx = (i * slotW) + 5;
                 if (e.type === 'chord') {
                     s += this.renderChord(e.content, cx, chordY);
                 } else if (e.type === 'nc') {
@@ -392,7 +375,6 @@
                 } else if (e.type === 'repeat-2') {
                     s += `<text x="${w / 2}" y="${chordY}" style="font-size: 28px; font-weight: bold; text-anchor: middle;">𝄎</text>`;
                 }
-                // Space: do nothing
             });
 
             return s;
@@ -420,13 +402,15 @@
                     s += `<circle cx="${x - 14}" cy="${h / 2 + 10}" r="3" fill="black"/>`;
                     break;
                 default:
-                    if (x === 0 && style === '|') s = l(0, thin); // Default
+                    if (x === 0 && style === '|') s = l(0, thin);
                     break;
             }
             return s;
         }
 
         renderChord(chordStr, x, y) {
+            if (chordStr === '}') return "";
+
             let main = chordStr;
             let alt = null;
             if (main.includes('(')) {
@@ -434,6 +418,7 @@
                 main = parts[0];
                 alt = parts[1].replace(')', '');
             }
+
             const parts = this.parseChordParts(main);
 
             let s = `<text x="${x}" y="${y}">`;
@@ -441,7 +426,7 @@
 
             let currentDy = 0;
             if (parts.quality) {
-                const dy = 4; // -15
+                const dy = 4;
                 s += `<tspan class="chord-suffix" dy="${dy}">${this.prettify(parts.quality)}</tspan>`;
                 currentDy += dy;
             }
@@ -478,5 +463,151 @@
         }
     }
 
-    return { Parser, Renderer };
+    // ==========================================
+    // TRANSPOSER
+    // ==========================================
+    class Transposer {
+        static get KEYS() {
+            return {
+                "C": ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"],
+                "Ci": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "Bb", "B"],
+                "Db": ["Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "Cb", "C"],
+                "Dbi": ["Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "Cb", "C"],
+                "D": ["D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B", "C", "C#"],
+                "Di": ["D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#"],
+                "Eb": ["Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D"],
+                "Ebi": ["Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D"],
+                "E": ["E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#"],
+                "Ei": ["E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#"],
+                "F": ["F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D", "Eb", "E"],
+                "Fi": ["F", "F#", "G", "Ab", "A", "Bb", "B", "C", "C#", "D", "Eb", "E"],
+                "Gb": ["Gb", "G", "Ab", "A", "Bb", "Cb", "C", "Db", "D", "Eb", "E", "F"],
+                "Gbi": ["Gb", "G", "Ab", "A", "Bb", "Cb", "C", "Db", "D", "Eb", "E", "F"],
+                "G": ["G", "Ab", "A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#"],
+                "Gi": ["G", "G#", "A", "Bb", "B", "C", "C#", "D", "D#", "E", "F", "F#"],
+                "Ab": ["Ab", "A", "Bb", "B", "C", "Db", "D", "Eb", "E", "F", "Gb", "G"],
+                "Abi": ["Ab", "A", "Bb", "B", "C", "Db", "D", "Eb", "E", "F", "Gb", "G"],
+                "A": ["A", "Bb", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"],
+                "Ai": ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"],
+                "Bb": ["Bb", "B", "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A"],
+                "Bbi": ["Bb", "B", "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A"],
+                "B": ["B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#"],
+                "Bi": ["B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#"],
+                "A-": ["A", "Bb", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"],
+                "A-i": ["A", "Bb", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"],
+                "Bb-": ["Bb", "B", "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A"],
+                "Bb-i": ["Bb", "B", "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A"],
+                "B-": ["B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#"],
+                "B-i": ["B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#"],
+                "C-": ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"],
+                "C-i": ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"],
+                "C#-": ["C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C"],
+                "C#-i": ["C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C"],
+                "D-": ["D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B", "C", "C#"],
+                "D-i": ["D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B", "C", "C#"],
+                "Eb-": ["Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D"],
+                "Eb-i": ["Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D"],
+                "E-": ["E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#"],
+                "E-i": ["E", "F", "F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#"],
+                "F-": ["F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D", "Eb", "E"],
+                "F-i": ["F", "Gb", "G", "Ab", "A", "Bb", "B", "C", "Db", "D", "Eb", "E"],
+                "F#-": ["F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F"],
+                "F#-i": ["F#", "G", "G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F"],
+                "G-": ["G", "Ab", "A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#"],
+                "G-i": ["G", "Ab", "A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#"],
+                "G#-": ["G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G"],
+                "G#-i": ["G#", "A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G"]
+            };
+        }
+
+        static get NOTE_INDICES() {
+            return {
+                'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4,
+                'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11, 'Cb': 11, 'B#': 0, 'E#': 5, 'Fb': 4
+            };
+        }
+
+        static transpose(song, targetKey) {
+            const sourceKey = song.key;
+            if (!Transposer.KEYS[targetKey]) {
+                console.warn(`Target key ${targetKey} not found in map.`);
+                // Fallback: strip '-' if exists, or just return basic
+                return song;
+            }
+            if (!Transposer.KEYS[sourceKey]) {
+                console.warn(`Source key ${sourceKey} not found in map.`);
+                // Might happen if source is custom. 
+                // We should probably normalize sourceKey logic.
+            }
+
+            const sourceRootIndex = Transposer.NOTE_INDICES[sourceKey.replace(/-.*/, '')] || 0;
+            const targetRootIndex = Transposer.NOTE_INDICES[targetKey.replace(/-.*/, '')] || 0;
+
+            // Calculate semitone delta
+            const delta = (targetRootIndex - sourceRootIndex + 12) % 12;
+
+            // Deep copy measures to avoid mutation
+            const newMeasures = JSON.parse(JSON.stringify(song.measures));
+
+            // Iterate and transpose
+            newMeasures.forEach(m => {
+                m.events.forEach(e => {
+                    if (e.type === 'chord') {
+                        e.content = this.transposeChord(e.content, delta, targetKey);
+                    }
+                });
+            });
+
+            const newSong = new Song(song.title, song.composer, song.style, targetKey, song.musicString);
+            newSong.measures = newMeasures;
+            return newSong;
+        }
+
+        static transposeChord(chordStr, delta, targetKeyMapName) {
+            // Handle brace ?
+            if (chordStr === '}') return '}';
+
+            let main = chordStr;
+            let alt = null;
+            if (main.includes('(')) {
+                const parts = main.split('(');
+                main = parts[0];
+                alt = parts[1].replace(')', '');
+            }
+
+            const parser = new Renderer(); // Use renderer helper to split
+            const p = parser.parseChordParts(main);
+
+            const newRoot = this.transposeNote(p.root, delta, targetKeyMapName);
+            const newBass = p.bass ? this.transposeNote(p.bass, delta, targetKeyMapName) : '';
+
+            let newChord = newRoot + p.quality + (newBass ? '/' + newBass : '');
+
+            if (alt) {
+                const pAlt = parser.parseChordParts(alt);
+                const newAltRoot = this.transposeNote(pAlt.root, delta, targetKeyMapName);
+                const newAltBass = pAlt.bass ? this.transposeNote(pAlt.bass, delta, targetKeyMapName) : '';
+                newChord += `(${newAltRoot}${pAlt.quality}${newAltBass ? '/' + newAltBass : ''})`;
+            }
+
+            return newChord;
+        }
+
+        static transposeNote(note, delta, targetKeyMapName) {
+            if (!note) return "";
+            const idx = Transposer.NOTE_INDICES[note];
+            if (idx === undefined) return note; // fallback
+
+            const newIndex = (idx + delta) % 12;
+            const map = Transposer.KEYS[targetKeyMapName] || Transposer.KEYS['C'];
+
+            // Map is relative to key root.
+            const targetRootIdx = Transposer.NOTE_INDICES[targetKeyMapName.replace(/-.*/, '')] || 0;
+            const lookupIndex = (newIndex - targetRootIdx + 12) % 12;
+
+            return map[lookupIndex];
+        }
+    }
+
+    return { Parser, Renderer, Transposer };
 }));
