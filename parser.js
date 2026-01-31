@@ -360,8 +360,8 @@
             // Render Annotations
             annos.forEach(a => {
                 if (a.type === 'time') {
-                    s += `<text x="10" y="20" class="time-sig">${a.value[0]}</text>`;
-                    s += `<text x="10" y="45" class="time-sig">${a.value[1]}</text>`;
+                    s += `<text x="-15" y="${(h / 2) - 4}" class="time-sig">${a.value[0]}</text>`;
+                    s += `<text x="-15" y="${(h / 2) + 21}" class="time-sig">${a.value[1]}</text>`;
                 }
                 if (a.type === 'rehearsal') {
                     s += `<rect x="-5" y="-35" width="24" height="24" fill="black"/>`;
@@ -441,7 +441,7 @@
 
             let currentDy = 0;
             if (parts.quality) {
-                const dy = -15;
+                const dy = 4; // -15
                 s += `<tspan class="chord-suffix" dy="${dy}">${this.prettify(parts.quality)}</tspan>`;
                 currentDy += dy;
             }

@@ -31,9 +31,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const renderer = new Renderer();
 
             console.log("Parsing...");
-            const songData = parser.parse(url);
+            let songData = parser.parse(url);
             console.log("Parsed Data:", songData);
 
+            if (songData.length >= 1) {
+                songData = songData[0];
+            }
             const svgString = renderer.render(songData);
             output.innerHTML = svgString;
 
