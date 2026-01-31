@@ -105,13 +105,9 @@
          Ideally, we should ensure the Drawer component is receiving the right props.
     -->
 	<Drawer
+		transitionType="fly"
 		{transitionParams}
-		hidden={drawerHidden}
-		onclick={() => {
-			/* backdrop click handling typically handled by component using backdrop=true default */
-		}}
-		onclose={() => (drawerHidden = true)}
-		activateClickOutside={true}
+		bind:hidden={drawerHidden}
 		id="sidebar-mobile"
 		class="bg-gray-900 border-r border-gray-800 w-80 p-0"
 	>
