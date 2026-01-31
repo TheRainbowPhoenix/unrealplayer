@@ -15,37 +15,52 @@ try {
 
 const { Parser, Renderer } = iRealPro;
 
-// Example URL from the user request
-const DEFAULT_URL = "irealbook://A%20Walkin%20Thing%3DCarter%20Benny%3DMedium%20Swing%3DD-%3Dn%3D%7B*AT44D-%20D-/C%20%7CBh7%2C%20Bb7(A7b9)%20%7CD-/A%20G-7%20%7CD-/F%20sEh%2CA7%2C%7CY%7ClD-%20D-/C%20%7CBh7%2C%20Bb7(A7b9)%20%7CD-/A%20G-7%20%7CN1D-/F%20sEh%2CA7%7D%20%20%20%20%20%20%20%20%20%20%20%20Y%7CN2sD-%2CG-%2ClD-%20%5D%5B*BC-7%20F7%20%7CBb%5E7%20%7CC-7%20F7%20%7CBb%5E7%20n%20%7C%7CC-7%20F7%20%7CBb%5E7%20%7CB-7%20E7%20%7CA7%2Cp%2Cp%2Cp%2C%5D%5B*AD-%20D-/C%20%7CBh7%2C%20Bb7(A7b9)%20%7CD-/A%20G-7%20%7CD-/F%20sEh%2CA7%2C%7C%7ClD-%20D-/C%20%7CBh7%2C%20Bb7(A7b9)%20%7CD-/A%20G-7%20%7CD-/F%20sEh%2CA7Z";
-
 // Check for args
-const url = Deno.args[0] || DEFAULT_URL;
+let urlInput = Deno.args[0];
+
+if (!urlInput) {
+    console.log("Please provide a URL or a file path containing the URL.");
+    Deno.exit(0);
+}
+
+// Try to read as file
+try {
+    const fileInfo = await Deno.stat(urlInput);
+    if (fileInfo.isFile) {
+        console.log(`Reading URL from file: ${urlInput}`);
+        urlInput = await Deno.readTextFile(urlInput);
+        // Clean up whitespace just in case
+        urlInput = urlInput.trim();
+    }
+} catch (e) {
+    // Not a file, ignore
+}
 
 console.log("Parsing URL...");
 try {
     const parser = new Parser();
     const renderer = new Renderer();
 
-    const songs = parser.parse(url);
+    const songs = parser.parse(urlInput);
     if (songs.length === 0) throw new Error("No songs found");
 
     console.log(`Found ${songs.length} songs:`);
-    songs.forEach((s, i) => console.log(`${i + 1}: ${s.title} (${s.composer})`));
 
-    // By default render the first song, or look for specific one if needed
-    // Logic: If 'Blues - Jazz 1' exists, use it (for testing), otherwise first.
-    let songData = songs.find(s => s.title === "Blues - Jazz 1") || songs[0];
+    songs.forEach((s, i) => {
+        console.log(`\n--- Song ${i + 1} ---`);
+        console.log(`Title: ${s.title}`);
+        console.log(`Composer: ${s.composer}`);
+        console.log(`Raw Unscrambled Music: ${s.musicString}`);
+    });
 
-    console.log(`\nRendering: ${songData.title}`);
-    console.log(`Composer: ${songData.composer}`);
-    console.log(`Raw Unscrambled Music: ${songData.musicString}`); // Print for debugging
-
-    const svg = renderer.render(songData);
-
-    const outPath = "output.svg";
-    await Deno.writeTextFile(outPath, svg);
-
-    console.log(`Successfully generated SVG at ${outPath}`);
+    if (songs.length > 0) {
+        const songToRender = songs[0];
+        console.log(`\nRendering first song "${songToRender.title}" to output.svg...`);
+        const svg = renderer.render(songToRender);
+        const outPath = "output.svg";
+        await Deno.writeTextFile(outPath, svg);
+        console.log(`Successfully generated SVG at ${outPath}`);
+    }
 
 } catch (e) {
     console.error("Error during processing:", e);
