@@ -1,4 +1,3 @@
-
 // deno_main.ts
 
 // Since parser.js is UMD/CommonJS compatible, we can import it using createRequire
@@ -31,6 +30,7 @@ try {
 
     console.log(`Song Title: ${songData.title}`);
     console.log(`Composer: ${songData.composer}`);
+    console.log(`Raw Unscrambled Music: ${songData.musicString}`); // Print for debugging
 
     const svg = renderer.render(songData);
 

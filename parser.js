@@ -15,6 +15,26 @@
 }(typeof self !== 'undefined' ? self : this, function () {
 
     // ==========================================
+    // DATA MODEL (Matching C3845c)
+    // ==========================================
+    class Song {
+        constructor(title, composer, style, key, musicString) {
+            this.title = title || "Unknown";
+            this.composer = composer || "Unknown";
+            this.style = style || "Unknown";
+            this.key = key || "C";
+            this.musicString = musicString || "";
+
+            // Extra metadata supported by C3845c/Importer
+            this.transposition = null; // f12586g
+            this.tempo = null;         // f12587h
+            this.repeats = null;       // f12588j
+
+            this.systems = []; // Parsed structure
+        }
+    }
+
+    // ==========================================
     // PARSER
     // ==========================================
     class Parser {
@@ -24,6 +44,7 @@
         parse(url) {
             let decoded = decodeURIComponent(url);
             let dataString = "";
+
             if (decoded.startsWith("irealbook://")) {
                 dataString = decoded.replace("irealbook://", "");
             } else if (decoded.startsWith("irealb://")) {
@@ -32,19 +53,93 @@
                 dataString = decoded;
             }
 
-            const components = dataString.split("=");
+            // Handle multiple songs (only take the first one for now)
+            const songs = dataString.split("===");
+            const firstSongData = songs[0];
 
-            const song = {
-                title: components[0] || "Unknown",
-                composer: components[1] || "Unknown",
-                style: components[2] || "Medium Swing",
-                key: components[3] || "C",
-                n: components[4] || "",
-                progressionRaw: components.slice(5).join("=")
-            };
+            const components = firstSongData.split("=");
 
-            song.systems = this.parseProgression(song.progressionRaw);
+            // Heuristic to find fields
+            // Standard: Title=Composer=Style=Key=n=Music
+            // But sometimes there are extra empty fields.
+            // We know the last field (or the one starting with 1r34) is likely the music.
+
+            let title = components[0];
+            let composer = components[1];
+            let style = "Unknown";
+            let key = "C";
+            let rawMusic = "";
+
+            // Find music string
+            let musicIndex = -1;
+            for (let i = 0; i < components.length; i++) {
+                if (components[i].startsWith("1r34LbKcu7")) {
+                    musicIndex = i;
+                    break;
+                }
+            }
+
+            if (musicIndex !== -1) {
+                rawMusic = components[musicIndex];
+                // Try to guess valid Style/Key before music
+                // Usually Key is just before 'n' (which is just before Music), or 2 slots before Music.
+                // Format: ... =Style=Key=n=Music
+                if (musicIndex >= 3) {
+                    // Check if musicIndex-1 is empty (the 'n' field?)
+                    // It seems structure is: Title=Composer=Info?=Style=Key=n=Music
+                    if (components[musicIndex - 2]) key = components[musicIndex - 2];
+                    if (components[musicIndex - 3]) style = components[musicIndex - 3];
+                }
+            } else {
+                // Fallback for non-obfuscated or standard irealbook://
+                if (components.length >= 6) {
+                    style = components[2];
+                    key = components[3];
+                    rawMusic = components.slice(5).join("=");
+                }
+            }
+
+            const music = this.unscramble(rawMusic);
+
+            const song = new Song(title, composer, style, key, music);
+
+            // Parse the chord progression
+            song.systems = this.parseProgression(song.musicString);
             return song;
+        }
+
+        unscramble(data) {
+            if (!data.startsWith("1r34LbKcu7") || data.length < 11) return data;
+            let s = data.substring(10).split('');
+            const reverse = (arr, start, maxRelIndex) => {
+                let count = Math.floor(maxRelIndex / 2);
+                for (let k = 0; k < count; k++) {
+                    let idx1 = start + k;
+                    let idx2 = start + maxRelIndex - k;
+                    if (idx2 < arr.length) {
+                        let tmp = arr[idx1];
+                        arr[idx1] = arr[idx2];
+                        arr[idx2] = tmp;
+                    }
+                }
+            };
+            // Modified loop condition to ensure last full block is processed
+            for (let i = 0; i + 50 <= s.length; i += 50) {
+                reverse(s, i + 10, 29);
+                reverse(s, i + 5, 39);
+                reverse(s, i, 49);
+            }
+            let i = 0;
+            while (i < s.length - 2) {
+                let c1 = s[i];
+                let c2 = s[i + 1];
+                let c3 = s[i + 2];
+                if (c1 === 'X' && c2 === 'y' && c3 === 'Q') { s[i] = ' '; s[i + 1] = ' '; s[i + 2] = ' '; i += 3; continue; }
+                if (c1 === 'K' && c2 === 'c' && c3 === 'l') { s[i] = '|'; s[i + 1] = ' '; s[i + 2] = 'x'; i += 3; continue; }
+                if (c1 === 'L' && c2 === 'Z') { s[i] = ' '; s[i + 1] = '|'; i += 2; continue; }
+                i++;
+            }
+            return s.join('');
         }
 
         parseProgression(raw) {
@@ -62,8 +157,6 @@
                     if (currentSystem.cells.length > 0 || currentSystem.annotations.length > 0) {
                         systems.push(currentSystem);
                     } else {
-                        // Only push spacer if it's explicitly purely empty or we want to track spacers?
-                        // User code previous logic:
                         systems.push({ cells: [], annotations: [], isSpacer: true });
                     }
                     currentSystem = { cells: [], annotations: [] };
@@ -146,6 +239,7 @@
                     while (i < len) {
                         const c = raw[i];
                         if (" []{}ZYT*N<,sl".includes(c)) {
+                            // Heuristics
                             if (c === 'T' && i + 2 < len && /\d/.test(raw[i + 1])) break;
                             if (c === 'N' && i + 1 < len && /\d/.test(raw[i + 1])) break;
                             if (c === 's' && token === "") break;
@@ -269,7 +363,7 @@
                     svg += `</g>`; // end measure
                 }
 
-                // Final Barline (Index 16) - Attach to End of Measure 3
+                // Final Barline (Index 16)
                 const finalAnnos = sys.annotations.filter(a => a.index >= 16);
                 if (finalAnnos.length > 0) {
                     svg += `<g class="end-bar" transform="translate(${4 * measureWidth}, 0)">`;
@@ -300,7 +394,6 @@
                     s += `<text x="9" y="-11" fill="white" font-weight="bold" font-size="18" text-anchor="middle">${a.value}</text>`;
                 }
                 if (a.type === 'ending') {
-                    // Span approx 4 cells
                     const span = w * 4;
                     s += `<polyline points="0,15 0,0 ${span},0" fill="none" stroke="black" stroke-width="2"/>`;
                     s += `<text x="5" y="12" font-size="12" font-weight="bold">${a.value}.</text>`;
@@ -337,9 +430,7 @@
 
             switch (style) {
                 case 'single': s = l(0, thin); break;
-                // Double Start: Thick then Thin at 0
                 case 'double-start': s = l(0, thick) + l(6, thin); break;
-                // Double End: Thin then Thick relative to 0 (which is right edge usually)
                 case 'double-end': s = l(-6, thin) + l(0, thick); break;
                 case 'final': s = l(-6, thin) + l(0, thick); break;
 
