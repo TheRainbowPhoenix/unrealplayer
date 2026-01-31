@@ -466,25 +466,41 @@ export class Renderer {
         };
     }
 
-    render(song: Song): string {
+    render(song: Song, activeIndex: number = -1): string {
         const { padding, systemWidth, systemHeight, systemSpacing, measureWidth, colors } = this.config;
 
         const systems: Measure[][] = [];
         let currentSystem: Measure[] = [];
+        // We need to track the global index of measures to match activeIndex
+        let globalMeasureIndex = 0;
+        let systemMeasureIndices: number[][] = [];
+        let currentSystemIndices: number[] = [];
 
         for (const item of song.measures) {
             if (item.events.some(e => e.type === 'break')) {
-                if (currentSystem.length > 0) systems.push(currentSystem);
+                if (currentSystem.length > 0) {
+                    systems.push(currentSystem);
+                    systemMeasureIndices.push(currentSystemIndices);
+                }
                 currentSystem = [];
+                currentSystemIndices = [];
             } else {
                 currentSystem.push(item);
+                currentSystemIndices.push(globalMeasureIndex);
+                globalMeasureIndex++;
+
                 if (currentSystem.length === 4) {
                     systems.push(currentSystem);
+                    systemMeasureIndices.push(currentSystemIndices);
                     currentSystem = [];
+                    currentSystemIndices = [];
                 }
             }
         }
-        if (currentSystem.length > 0) systems.push(currentSystem);
+        if (currentSystem.length > 0) {
+            systems.push(currentSystem);
+            systemMeasureIndices.push(currentSystemIndices);
+        }
 
         const contentH = systems.length * (systemHeight + systemSpacing);
         const totalHeight = contentH + padding + 100;
@@ -514,13 +530,18 @@ export class Renderer {
 
         let currentY = 0;
 
-        systems.forEach(sys => {
+        systems.forEach((sys, sysIdx) => {
             svg += `<g class="system" transform="translate(0, ${currentY})">`;
+
+            const indices = systemMeasureIndices[sysIdx];
 
             sys.forEach((measure, idx) => {
                 const mx = idx * measureWidth;
+                const mIndex = indices[idx];
+                const isActive = mIndex === activeIndex;
+
                 svg += `<g class="measure" transform="translate(${mx}, 0)">`;
-                svg += this.renderMeasure(measure, measureWidth, systemHeight);
+                svg += this.renderMeasure(measure, measureWidth, systemHeight, isActive);
                 svg += `</g>`;
             });
 
@@ -532,8 +553,12 @@ export class Renderer {
         return svg;
     }
 
-    renderMeasure(measure: Measure, w: number, h: number): string {
+    renderMeasure(measure: Measure, w: number, h: number, isActive: boolean = false): string {
         let s = "";
+
+        if (isActive) {
+            s += `<rect x="0" y="0" width="${w}" height="${h}" fill="rgba(255, 255, 0, 0.3)" rx="8" />`;
+        }
 
         s += this.svgBarline(measure.start, 0, h);
         s += this.svgBarline(measure.end, w, h);
@@ -661,4 +686,44 @@ export class Renderer {
         if (!str) return "";
         return str.replace(/b/g, '♭').replace(/#/g, '♯').replace(/-/g, '-').replace(/h/g, 'ø').replace(/o/g, '°').replace(/\^/g, 'Δ');
     }
+}
+
+export function getMeasureTimes(song: Song, bpm: number): { start: number; end: number; index: number }[] {
+    const times: { start: number; end: number; index: number }[] = [];
+    const secPerBeat = 60 / bpm;
+
+    let currentTime = 0;
+    let currentBeatsPerMeasure = 4; // Default 4/4
+
+    let measureIndex = 0;
+
+    for (const measure of song.measures) {
+        // Check for time signature change
+        const timeEvt = measure.events.find(e => e.type === 'time');
+        if (timeEvt && timeEvt.value && timeEvt.value.length === 2) {
+            const top = parseInt(timeEvt.value[0]);
+            if (!isNaN(top)) {
+                currentBeatsPerMeasure = top;
+            }
+        }
+
+        // Skip purely structural measures that have 'break' ?? No, 'break' event is handled by Renderer not pushing it as a measure usually?
+        // Parser creates measures with 'break' event for layout. They are NOT musical time measures usually.
+        // Wait, "measures.push({ start: '', end: '', events: [{ type: 'break' }] });"
+        // These are distinct "measures" in the array. 
+        // We must exclude them from time map.
+
+        const isBreak = measure.events.some(e => e.type === 'break');
+        if (isBreak) continue;
+
+        const duration = currentBeatsPerMeasure * secPerBeat;
+        times.push({
+            index: measureIndex,
+            start: currentTime,
+            end: currentTime + duration
+        });
+        currentTime += duration;
+        measureIndex++;
+    }
+    return times;
 }

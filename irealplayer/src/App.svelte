@@ -105,7 +105,6 @@
          Ideally, we should ensure the Drawer component is receiving the right props.
     -->
 	<Drawer
-		transitionType="fly"
 		{transitionParams}
 		bind:hidden={drawerHidden}
 		id="sidebar-mobile"
