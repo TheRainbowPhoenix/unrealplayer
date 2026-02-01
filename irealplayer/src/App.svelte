@@ -71,6 +71,81 @@
 	};
 
 	let showChords = false;
+
+	// Current Key state (bound from Controls)
+	let currentKey = "";
+
+	import { tempo } from "./lib/store";
+
+	// Update Hash when state changes
+	$: if (selectedSong) {
+		const keyToUse = currentKey || selectedSong.key;
+		// Construct IReal String
+		const s = new Song(
+			selectedSong.title,
+			selectedSong.composer,
+			selectedSong.style,
+			keyToUse,
+			selectedSong.musicString,
+			$tempo.toString(),
+		);
+		const newHash = s.toIRealString();
+		// Prevent update loop if hash matches
+		if (window.location.hash !== "#" + newHash) {
+			// Basic debounce check or identity check?
+			// Since newHash is derived from state, setting hash here is side-effect.
+			// If hash changes, onMount doesn't re-run.
+			// Hash change event? Not using hashchange listener.
+			window.location.hash = newHash;
+		}
+	}
+
+	// Handle Hash on mount
+	onMount(() => {
+		try {
+			let rawData = localStorage.getItem("ireal-playlist");
+			if (!rawData) {
+				console.log("No local playlist found, using defaults.");
+				rawData = DEFAULT_PLAYLIST;
+				localStorage.setItem("ireal-playlist", rawData);
+			}
+
+			const parser = new Parser();
+			// @ts-ignore
+			songs = parser.parse(rawData);
+
+			// Check Hash
+			const hash = window.location.hash.substring(1);
+			let loadedFromHash = false;
+			// Basic detection of iReal URL or parsed format
+			if (
+				hash &&
+				(hash.startsWith("irealb://") ||
+					hash.startsWith("irealbook://") ||
+					hash.includes("="))
+			) {
+				try {
+					const parsedHash = parser.parse(hash);
+					if (parsedHash.length > 0) {
+						selectedSong = parsedHash[0];
+						if (selectedSong.tempo) {
+							tempo.set(parseInt(selectedSong.tempo));
+						}
+						currentKey = selectedSong.key;
+						loadedFromHash = true;
+					}
+				} catch (e) {
+					console.error("Error parsing hash:", e);
+				}
+			}
+
+			if (!loadedFromHash && songs.length > 0) {
+				selectedSong = songs[0];
+			}
+		} catch (e) {
+			console.error("Error loading playlist:", e);
+		}
+	});
 </script>
 
 <div class="flex h-screen overflow-hidden bg-gray-900 text-white font-sans">
@@ -85,27 +160,6 @@
 		/>
 	</div>
 
-	<!-- Mobile Drawer -->
-	<!-- Use standard Tailwind fixed positioning for the drawer overlay and content if Component is tricky with bind:hidden or just ensure class handles it. 
-         Flowbite Drawer uses 'hidden' prop. If true, it adds 'hidden' class usually. 
-         The issue "drawer is empty" might be because the Sidebar needs standard content structure. 
-         Wait, we removed the header and close button from the drawer itself, delegating it to PlaylistPanel?
-         No, PlaylistPanel has its own header. The Drawer content was:
-         
-		<div class="flex items-center justify-between mb-4">...</div>
-		<Sidebar class="w-full">...</Sidebar>
-
-         We replaced it with just Sidebar > PlaylistPanel. 
-         The PlaylistPanel has a header.
-         
-         If the drawer is empty, maybe the style/height is zero?
-         We set w-80 p-0 for the Drawer class.
-         Inside is Sidebar w-full h-full. SidebarWrapper h-full. 
-         PlaylistPanel has h-full.
-         
-         Re: "unable to be closed by click" -> The backdrop click built into Drawer should work if 'transitionType="fly"' is used with params.
-         Ideally, we should ensure the Drawer component is receiving the right props.
-    -->
 	<Drawer
 		{transitionParams}
 		bind:hidden={drawerHidden}
@@ -134,15 +188,17 @@
 	<main class="flex-1 flex flex-col relative w-full h-full bg-[#1F2937]">
 		<!-- Mobile Header -->
 		<div
-			class="p-4 flex items-center md:hidden bg-gray-900 border-b border-gray-800"
+			class="md:hidden flex items-center p-4 bg-gray-800 border-b border-gray-700 z-20 shadow-md flex-shrink-0"
 		>
 			<Button
-				color="dark"
-				class="mr-3"
+				class="!p-2 text-white hover:bg-gray-700 rounded-lg mr-3"
 				onclick={() => (drawerHidden = false)}
-				><BarsSolid class="w-6 h-6" /></Button
 			>
-			<span class="font-bold">iReal Player</span>
+				<BarsSolid class="w-6 h-6" />
+			</Button>
+			<h1 class="text-xl font-bold truncate">
+				{selectedSong ? selectedSong.title : "iReal Player"}
+			</h1>
 		</div>
 
 		<div class="flex-1 overflow-auto bg-[#FDF6E3] relative flex flex-col">
@@ -159,7 +215,9 @@
 
 		<!-- ControlsOverlay -->
 		{#if selectedSong}
-			<Controls bind:song={selectedSong} bind:showChords />
+			<div class="flex-shrink-0 w-full z-30">
+				<Controls song={selectedSong} bind:showChords bind:currentKey />
+			</div>
 		{/if}
 	</main>
 </div>

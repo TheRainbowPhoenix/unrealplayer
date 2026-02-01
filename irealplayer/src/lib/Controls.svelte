@@ -28,10 +28,19 @@
 
     export let song: Song;
     export let showChords = false;
+    export let currentKey = song.key;
+
+    // Reactively update originalKey when song changes, and reset currentKey
+    let lastSongTitle = song.title;
+    $: if (song.title !== lastSongTitle) {
+        lastSongTitle = song.title;
+        currentKey = song.key;
+        originalKey = song.key;
+    }
 
     // Local state for UI
     let controlsVisible = false; // Drawer state
-    let currentKey = song.key;
+    // currentKey is now exported
     let originalKey = song.key;
     let durationMap: { start: number; end: number; index: number }[] = [];
     let totalDuration = 0;
@@ -47,7 +56,18 @@
     let elapsedAtPause = 0; // Duration elapsed when paused
 
     // Metronome State
-    let metronomeEnabled = false;
+    let metronomeEnabled = true;
+
+    // Persist Metronome Settings
+    onMount(() => {
+        const savedMetronome = localStorage.getItem("metronomeEnabled");
+        if (savedMetronome !== null) {
+            metronomeEnabled = savedMetronome === "true";
+        }
+    });
+
+    $: localStorage.setItem("metronomeEnabled", String(metronomeEnabled));
+
     let currentBeatIndex = -1;
 
     // Volumes

@@ -23,6 +23,14 @@ export class Song {
         this.musicString = musicString;
         this.measures = [];
     }
+    toIRealString(): string {
+        const enc = (s: string) => encodeURIComponent(s);
+        // Format: Title=Composer=Style=Key=n=Music=Tempo
+        // Note: We put music string unscrambled. We must ensure Parser reads it.
+        // We use 'n' as placeholder for 5th component if we stick to standard layout.
+        const t = this.tempo ? `=${this.tempo}` : '';
+        return `irealb://${enc(this.title)}=${enc(this.composer)}=${enc(this.style)}=${enc(this.key)}=n=${this.musicString}${t}`;
+    }
 }
 
 export class Transposer {
@@ -240,12 +248,23 @@ export class Parser {
             } else {
                 if (components.length >= 6) {
                     style = components[2];
+
+                    let musicEndIndex = components.length;
+                    // Check for trailing tempo (2 or 3 digits)
+                    const last = components[components.length - 1];
+                    if (/^\d{2,3}$/.test(last)) {
+                        tempo = last;
+                        musicEndIndex--;
+                    }
+
                     if (Transposer.KEYS[components[4]]) {
                         key = components[4];
-                        rawMusic = components.slice(5).join("=");
+                        rawMusic = components.slice(5, musicEndIndex).join("=");
                     } else {
                         key = components[3];
-                        rawMusic = components.slice(5).join("=");
+                        // If Key is at 3, assume 'n' or filler at 4, or just start music at 5 anyway per legacy?
+                        // Legacy code did slice(5).
+                        rawMusic = components.slice(5, musicEndIndex).join("=");
                     }
                 }
             }
