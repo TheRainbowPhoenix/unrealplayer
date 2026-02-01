@@ -35,6 +35,12 @@
             svgContent = renderer.render(song, $currentMeasureIndex);
         }
     }
+    // Reactively extract chords for the current measure
+    $: activeMeasure = song?.measures?.[$currentMeasureIndex];
+    $: currentChords =
+        activeMeasure?.events
+            .filter((e) => e.type === "chord" && e.content)
+            .map((e) => e.content) || [];
 </script>
 
 <div
@@ -46,11 +52,15 @@
         {@html svgContent}
     </div>
 
-    {#if showChords}
+    {#if showChords && currentChords.length > 0}
         <div
-            class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-sm p-4 rounded-xl shadow-2xl z-40 border border-gray-200 pointer-events-none"
+            class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-sm p-4 rounded-xl shadow-2xl z-40 border border-gray-200 pointer-events-none flex gap-4 overflow-x-auto max-w-[90vw]"
         >
-            <Chords />
+            {#each currentChords as chordStr}
+                <div class="transform scale-90">
+                    <Chords chord={chordStr} />
+                </div>
+            {/each}
         </div>
     {/if}
 </div>
