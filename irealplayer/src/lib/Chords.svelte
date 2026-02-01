@@ -1,7 +1,7 @@
 <script lang="ts">
-    import { getChordScale, getChordTones } from "./music-theory";
+    import { getChordScale, getChordTones, getScaleName } from "./music-theory";
 
-    export let chord: string = "F#o7";
+    export let chord: string = "Ebh7";
 
     const width = 174;
 
@@ -39,6 +39,7 @@
 
     $: scaleNotes = getChordScale(chord);
     $: chordTones = getChordTones(chord);
+    $: scaleName = getScaleName(chord);
 
     // Map scale notes to slots
     $: sharps = calculateSharps(scaleNotes);
@@ -124,6 +125,26 @@
     height="78.8"
     viewBox={`0 0 ${width + 1.45} 58.3`}
 >
+    <!-- Text Labels -->
+    <text
+        x={(width + 1.45) / 2}
+        y="12"
+        text-anchor="middle"
+        font-family="sans-serif"
+        font-weight="bold"
+        font-size="14"
+        fill="#000">{chord}</text
+    >
+    <text
+        x={width + 1.45 - 5}
+        y="55"
+        text-anchor="end"
+        font-family="sans-serif"
+        font-style="italic"
+        font-size="10"
+        fill="#444">{scaleName}</text
+    >
+
     <defs id="defs121">
         <path id="line-low-A" fill="none" stroke="#000" d="M32.9 48.9h13.8" />
         <path id="line-low-C" fill="none" stroke="#000" d="M32.9 44.1h13.8" />
@@ -148,7 +169,7 @@
         />
         <path
             id="glyph-sharp"
-            fill="#039"
+            fill="black"
             d="m49.5 18.4-.3 2H51l.3-1.9zm.6-3.2-.4 2.1h1.8l.4-2h.8l-.4 2h1.8q.3 0 .3.2l-.1.3-.4.6h-1.8l-.3 2H54q.3 0 .3.2v.3l-.4.6h-2.3l-.4 2.3h-.8l.4-2.2-1.8-.1-.4 2.3h-.9l.4-2.2h-1.7q-.2 0-.2-.2l.2-.5q.1-.5.7-.5h1.2l.4-2h-1.4l-.3.1h-.6q-.2 0-.2-.2l.2-.5q.3-.4.8-.4h1.7l.4-2.2z"
         />
         <g id="g119">
@@ -290,7 +311,7 @@
                 {/if}
             </g>
 
-            <g id="note_sharp" fill="#903" fill-opacity="1" stroke="none">
+            <g id="note_sharp" fill="black" fill-opacity="1" stroke="none">
                 {#if s.accidental === "sharp"}
                     <g
                         id="note_sharp_{s.name}"
@@ -307,7 +328,7 @@
 
             <g
                 id="note_flat"
-                fill="#039"
+                fill="black"
                 fill-opacity="1"
                 stroke="none"
                 font-family="sans-serif"
@@ -317,20 +338,16 @@
                     <g
                         id="note_flat_{s.name}"
                         style="line-height:125%"
-                        transform="matrix(.61 -.3 .11 1.58 -13 {s.y})"
+                        transform="matrix(1 0 0 1 18 {s.y + 16.2})"
                     >
-                        <use
-                            xlink:href="#glyph-flat"
-                            id="glyph-flat-{s.uId}"
-                            style="-inkscape-font-specification:&quot;Goudy Stout&quot;"
-                        />
+                        <use xlink:href="#glyph-flat" id="glyph-flat-{s.uId}" />
                     </g>
                 {/if}
             </g>
 
             <g
                 id="notes_ronde"
-                fill="#7b339b"
+                fill="black"
                 fill-opacity="1"
                 stroke="none"
                 transform="translate(13.0)"
@@ -347,7 +364,7 @@
     {/each}
 
     {#each sharps as s, i}
-        <g class="notes-line" transform="translate({30.4 + i * 14})">
+        <g class="notes-line" transform="translate({30.4 + i * 15})">
             <g
                 class="notes-sub-line"
                 transform="translate(-2.2, 16.2)"
@@ -381,7 +398,7 @@
 
             <g
                 id="note_sharp"
-                fill="#039"
+                fill="black"
                 fill-opacity="1"
                 stroke="none"
                 font-family="sans-serif"
@@ -402,7 +419,7 @@
                 {/if}
             </g>
 
-            <g id="note_flat" fill="#903" fill-opacity="1" stroke="none">
+            <g id="note_flat" fill="black" fill-opacity="1" stroke="none">
                 {#if s.accidental === "flat"}
                     <g
                         id="note_flat_{s.name}"
@@ -416,10 +433,10 @@
 
             <g
                 id="notes_ronde"
-                fill="#7b339b"
+                fill="black"
                 fill-opacity="1"
                 stroke="none"
-                transform="translate(13.0)"
+                transform="translate(14.0)"
             >
                 <g
                     id="note_ronde_{s.name}"
