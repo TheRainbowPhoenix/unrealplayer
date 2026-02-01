@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { Parser, Song } from "./lib/parser";
+	import { Parser, Song, Transposer } from "./lib/parser";
 	import { DEFAULT_PLAYLIST } from "./lib/defaults";
 	import SongList from "./lib/SongList.svelte";
 	import PlaylistPanel from "./lib/PlaylistPanel.svelte";
@@ -77,25 +77,26 @@
 
 	import { tempo } from "./lib/store";
 
+	// Derived Displayed Song (Transposed)
+	$: displayedSong =
+		selectedSong && currentKey && currentKey !== selectedSong.key
+			? Transposer.transpose(selectedSong, currentKey)
+			: selectedSong;
+
 	// Update Hash when state changes
 	$: if (selectedSong) {
-		const keyToUse = currentKey || selectedSong.key;
-		// Construct IReal String
+		// Use selectedSong (Original) as base, add transposeKey if needed
 		const s = new Song(
 			selectedSong.title,
 			selectedSong.composer,
 			selectedSong.style,
-			keyToUse,
+			selectedSong.key,
 			selectedSong.musicString,
 			$tempo.toString(),
 		);
-		const newHash = s.toIRealString();
+		const newHash = s.toIRealString(currentKey);
 		// Prevent update loop if hash matches
 		if (window.location.hash !== "#" + newHash) {
-			// Basic debounce check or identity check?
-			// Since newHash is derived from state, setting hash here is side-effect.
-			// If hash changes, onMount doesn't re-run.
-			// Hash change event? Not using hashchange listener.
 			window.location.hash = newHash;
 		}
 	}
@@ -197,13 +198,16 @@
 				<BarsSolid class="w-6 h-6" />
 			</Button>
 			<h1 class="text-xl font-bold truncate">
-				{selectedSong ? selectedSong.title : "iReal Player"}
+				{displayedSong ? displayedSong.title : "iReal Player"}
 			</h1>
 		</div>
 
-		<div class="flex-1 overflow-auto bg-[#FDF6E3] relative flex flex-col">
-			{#if selectedSong}
-				<Viewer song={selectedSong} {showChords} />
+		<!-- Viewer -->
+		<div
+			class="flex-1 w-full relative overflow-hidden bg-[#FDF6E3] flex items-center justify-center"
+		>
+			{#if displayedSong}
+				<Viewer song={displayedSong} {showChords} />
 			{:else}
 				<div
 					class="flex items-center justify-center h-full text-gray-500"
@@ -213,10 +217,14 @@
 			{/if}
 		</div>
 
-		<!-- ControlsOverlay -->
-		{#if selectedSong}
+		<!-- Controls -->
+		{#if displayedSong}
 			<div class="flex-shrink-0 w-full z-30">
-				<Controls song={selectedSong} bind:showChords bind:currentKey />
+				<Controls
+					song={displayedSong}
+					bind:showChords
+					bind:currentKey
+				/>
 			</div>
 		{/if}
 	</main>

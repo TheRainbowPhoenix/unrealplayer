@@ -23,13 +23,12 @@ export class Song {
         this.musicString = musicString;
         this.measures = [];
     }
-    toIRealString(): string {
+    toIRealString(transposeKey?: string): string {
         const enc = (s: string) => encodeURIComponent(s);
-        // Format: Title=Composer=Style=Key=n=Music=Tempo
-        // Note: We put music string unscrambled. We must ensure Parser reads it.
-        // We use 'n' as placeholder for 5th component if we stick to standard layout.
+        // Format: Title=Composer=Style=Key=n=Music=Tempo=TransposeKey
         const t = this.tempo ? `=${this.tempo}` : '';
-        return `irealb://${enc(this.title)}=${enc(this.composer)}=${enc(this.style)}=${enc(this.key)}=n=${this.musicString}${t}`;
+        const tk = transposeKey && transposeKey !== this.key ? `=${transposeKey}` : '';
+        return `irealb://${enc(this.title)}=${enc(this.composer)}=${enc(this.style)}=${enc(this.key)}=n=${this.musicString}${t}${tk}`;
     }
 }
 
@@ -220,6 +219,8 @@ export class Parser {
                 }
             }
 
+            let transposeKey = "";
+
             if (musicIndex !== -1) {
                 rawMusic = components[musicIndex];
                 if (musicIndex >= 1 && Transposer.KEYS[components[musicIndex - 1]]) {
@@ -228,15 +229,12 @@ export class Parser {
                     key = components[musicIndex - 2];
                 }
 
-                // Try to get style from earlier component
                 if (musicIndex >= 3) {
                     style = components[musicIndex - 3];
                 }
 
-                // Check for trailing metadata (Style, Tempo, Repeats)
-                // usually: Music=Style=Tempo=Repeats
+                // Check for trailing metadata
                 if (components.length > musicIndex + 1) {
-                    // prefer the trailing style as it is often more descriptive (e.g. "Jazz-Medium Up Swing")
                     const trailStyle = components[musicIndex + 1];
                     if (trailStyle && trailStyle.trim()) {
                         style = trailStyle;
@@ -245,13 +243,26 @@ export class Parser {
                 if (components.length > musicIndex + 2) {
                     tempo = components[musicIndex + 2];
                 }
+                // Check if last component is a Key (Transpose)
+                if (components.length > musicIndex + 3) {
+                    const last = components[components.length - 1];
+                    if (Transposer.KEYS[last]) transposeKey = last;
+                }
             } else {
                 if (components.length >= 6) {
                     style = components[2];
 
                     let musicEndIndex = components.length;
+
+                    // Check for trailing Transpose Key
+                    let last = components[components.length - 1];
+                    if (Transposer.KEYS[last]) {
+                        transposeKey = last;
+                        musicEndIndex--;
+                        last = components[components.length - 2];
+                    }
+
                     // Check for trailing tempo (2 or 3 digits)
-                    const last = components[components.length - 1];
                     if (/^\d{2,3}$/.test(last)) {
                         tempo = last;
                         musicEndIndex--;
@@ -262,8 +273,6 @@ export class Parser {
                         rawMusic = components.slice(5, musicEndIndex).join("=");
                     } else {
                         key = components[3];
-                        // If Key is at 3, assume 'n' or filler at 4, or just start music at 5 anyway per legacy?
-                        // Legacy code did slice(5).
                         rawMusic = components.slice(5, musicEndIndex).join("=");
                     }
                 }
@@ -271,8 +280,12 @@ export class Parser {
 
             if (rawMusic) {
                 const music = this.unscramble(rawMusic);
-                const song = new Song(title, composer, style, key, music, tempo);
+                let song = new Song(title, composer, style, key, music, tempo);
                 song.measures = this.parseProgression(song.musicString);
+
+                if (transposeKey && transposeKey !== song.key) {
+                    song = Transposer.transpose(song, transposeKey);
+                }
                 songs.push(song);
             }
         }
