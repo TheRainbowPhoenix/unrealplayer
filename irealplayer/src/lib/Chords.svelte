@@ -1,96 +1,118 @@
 <script lang="ts">
-    import { getChordScale } from "./music-theory";
+    import { getChordScale, getChordTones } from "./music-theory";
 
     export let chord: string = "F#o7";
 
+    const width = 174;
+
     // Notes slots definition (Y positions)
-    // Ordered from lowest visual note (G4)
-    // G4 is "G_low", A4 is "A", etc.
+    // Calibrated to SVG lines: E4=39.3, G4=34.5, B4=29.7, D5=25.0, F5=20.1
+    // Step = 4.8 (Line-Line), 2.4 (Line-Space)
     const SLOTS = [
-        { name: "G", label: "G_low", y: 35.7 },
-        { name: "A", label: "A", y: 33.2 },
-        { name: "B", label: "B", y: 31.0 },
-        { name: "C", label: "C", y: 28.4 },
-        { name: "D", label: "D", y: 26.1 },
-        { name: "E", label: "E", y: 23.6 },
-        { name: "F", label: "F", y: 21.3 },
-        { name: "G", label: "G", y: 18.8 },
-        { name: "A", label: "A_high", y: 16.5 },
-        { name: "B", label: "B_high", y: 14.0 },
-        { name: "C", label: "C_high", y: 11.6 },
-        { name: "D", label: "D_high", y: 9.1 },
-        // Extrapolate higher if needed
-        { name: "E", label: "E_high", y: 6.6 },
-        { name: "F", label: "F_high", y: 4.1 },
+        // Below staff ledger lines
+        { name: "F", label: "F3", y: 53.7, isLine: true },
+        { name: "G", label: "G3", y: 51.3, isLine: false },
+        { name: "A", label: "A3", y: 48.9, isLine: true },
+        { name: "B", label: "B3", y: 46.5, isLine: false },
+        { name: "C", label: "C4", y: 44.1, isLine: true },
+        { name: "D", label: "D4", y: 42.4, isLine: false },
+        // Staff lines and spaces
+        { name: "E", label: "E4", y: 40.0, isLine: true },
+        { name: "F", label: "F4", y: 37.6, isLine: false },
+        { name: "G", label: "G4", y: 35.2, isLine: true },
+        { name: "A", label: "A4", y: 32.8, isLine: false },
+        { name: "B", label: "B4", y: 30.4, isLine: true },
+        { name: "C", label: "C5", y: 28.0, isLine: false },
+        { name: "D", label: "D5", y: 25.6, isLine: true },
+        { name: "E", label: "E5", y: 23.2, isLine: false },
+        { name: "F", label: "F5", y: 20.7, isLine: true },
+        { name: "G", label: "G5", y: 18.3, isLine: false },
+        // Above staff ledger lines
+        { name: "A", label: "A5", y: 16.1, isLine: true },
+        { name: "B", label: "B5", y: 13.9, isLine: false },
+        { name: "C", label: "C6", y: 10.5, isLine: true },
+        { name: "D", label: "D6", y: 8.1, isLine: false },
+        { name: "E", label: "E6", y: 5.7, isLine: true },
+        { name: "F", label: "F6", y: 3.3, isLine: false },
+        { name: "G", label: "G6", y: 0.9, isLine: true },
     ];
 
     $: scaleNotes = getChordScale(chord);
+    $: chordTones = getChordTones(chord);
 
     // Map scale notes to slots
-    // We need to find a contiguous range of slots that fits the scale.
-    // Start by finding the Root note in the slots.
-    // Prefer lowest octave available? Or fit visible range?
-    // Visible range G4 - D6.
-    // D-7: D, E, F, G, A, B, C.
-    // D5 is a good start. D4 is not available (would be ~48y).
-    // Let's try to map the first note (Root) to the first matching slot in our list?
-    // G4 (G), A4 (A), B4 (B), C5 (C), D5 (D).
-
     $: sharps = calculateSharps(scaleNotes);
+    $: clusterSharps = calculateSharps(chordTones); // Y positions are calculated the same, X will differ in template
 
     function calculateSharps(notes: any[]) {
         if (!notes || notes.length === 0) return [];
 
+        const mappedNotes: any[] = [];
+        let prevSlotIndex = -1;
+
+        // Find a suitable starting slot for the root note.
+        // Prioritize starting around G4 (index 8) or D5 (index 12) for readability.
+        // If the root is 'D', try to find D5 (index 12).
+        // If the root is 'G', try to find G4 (index 8).
+        let initialRootSlotIndex = -1;
         const rootBase = notes[0].base;
-        // Find start index for root
-        let startIndex = SLOTS.findIndex((s) => s.name === rootBase);
 
-        // If startIndex -1 (shouldn't happen), default 0
-        // Also, specific preference logic:
-        // If root is high (e.g. G), G4 is good.
-        // If root is C, C5 is middle.
-        // Ideally we want the notes to fit.
-        // If we pick C5 (idx 3), 7 notes -> max idx 9 (B_high). Fits.
-        // If we pick G4 (idx 0), 7 notes -> max idx 6 (F5). Fits.
-        // Default: pick first occurrence.
+        // Try to find the root note in the middle of the staff (G4 to F5)
+        for (let i = 8; i <= 15; i++) {
+            // G4 to G5
+            if (SLOTS[i].name === rootBase) {
+                initialRootSlotIndex = i;
+                break;
+            }
+        }
+        // If not found in middle, find the first occurrence from the bottom
+        if (initialRootSlotIndex === -1) {
+            initialRootSlotIndex = SLOTS.findIndex((s) => s.name === rootBase);
+        }
+        // Fallback to 0 if still not found (shouldn't happen with full SLOTS)
+        if (initialRootSlotIndex === -1) initialRootSlotIndex = 0;
 
-        if (startIndex === -1) startIndex = 0;
+        prevSlotIndex = initialRootSlotIndex - 1; // Start search from before the root's slot
 
-        return notes.map((n, i) => {
-            const slotIndex = startIndex + i;
-            const slot = SLOTS[slotIndex] || {
-                name: n.base,
-                label: n.base + "_high_extra",
-                y:
-                    SLOTS[SLOTS.length - 1].y -
-                    2.5 * (slotIndex - (SLOTS.length - 1)),
-            };
+        notes.forEach((n, i) => {
+            let currentSlotIndex = -1;
+            // Search for the note's base name starting from the slot after the previous note
+            for (let j = prevSlotIndex + 1; j < SLOTS.length; j++) {
+                if (SLOTS[j].name === n.base) {
+                    currentSlotIndex = j;
+                    break;
+                }
+            }
 
-            // Map accidental
-            let uId = "ronde"; // Default ID suffix for standard round note?
-            // The SVG used specific IDs like "9-3" for D_high. These seem hardcoded or referenced in big font path.
-            // But wait, the loop uses `#path5052` for ALL notes?
-            // The user's code: `<use xlink:href="#path5052" id="path5052-{s.uId}" ... />`
-            // The `uId` was passed in `sharps`.
-            // Does `path5052` change shape?
-            // `path5052` is one single path definition (sharp symbol? No, it looks complex).
-            // Actually, in the user's snippet:
-            // `<g id="note_dieze_D_high" ...><use xlink:href="#path5052" .../></g>`
-            // It seems `path5052` is the Note Head (or sharp?).
-            // Wait, looking at `<g id="note_flat">... <use xlink:href="#glyph-sharp" ...>` in step 97.
-            // `<g id="note_sharp">... <use xlink:href="#glyph-flat" ...>`
-            // `<g id="notes_ronde">... <use xlink:href="#glyph-ronde" ...>`
-            // So `sharps` array was driving ALL of them.
-            // The previous `uId` was mostly ensuring unique IDs for the `use` element.
+            let yPos = 0;
+            let isLedger = false;
+            if (currentSlotIndex !== -1) {
+                yPos = SLOTS[currentSlotIndex].y;
+                console.log("currentSlotIndex", currentSlotIndex);
+                isLedger =
+                    SLOTS[currentSlotIndex].isLine && currentSlotIndex <= 11;
+            } else {
+                // If we run out of defined slots, extrapolate
+                // This assumes a consistent step of 2.4 units per half-step (or 4.8 per whole step)
+                const lastDefinedSlot = SLOTS[SLOTS.length - 1];
+                const stepsBeyond = prevSlotIndex + 1 - SLOTS.length; // How many "slots" past the end we are trying to place
+                yPos = lastDefinedSlot.y - stepsBeyond * 2.4; // Extrapolate upwards
+                isLedger = true; // Assume extrapolated notes are on ledger lines
+            }
 
-            return {
+            mappedNotes.push({
                 name: n.note, // "D", "F#", etc
                 baseName: n.base, // "D", "F"
-                y: slot.y,
-                uId: `generated-${i}`,
+                y: yPos,
+                uId: `note-${n.base}-${i}-${Math.random().toString(36).substring(7)}`, // Unique ID
                 accidental: n.accidental,
-            };
+                slotIndex: currentSlotIndex, // Store for debugging/future use
+                isLedger: isLedger,
+            });
+            prevSlotIndex =
+                currentSlotIndex !== -1 ? currentSlotIndex : prevSlotIndex + 1; // Update for next iteration
         });
+        return mappedNotes;
     }
 </script>
 
@@ -98,12 +120,12 @@
     xmlns="http://www.w3.org/2000/svg"
     xmlns:xlink="http://www.w3.org/1999/xlink"
     id="chord"
-    width="206"
+    width={width * 1.45}
     height="78.8"
-    viewBox="0 0 154.5 58.3"
+    viewBox={`0 0 ${width + 1.45} 58.3`}
 >
     <defs id="defs121">
-        <path id="line-low-A" fill="none" stroke="#000" d="M32.9 49h13.8" />
+        <path id="line-low-A" fill="none" stroke="#000" d="M32.9 48.9h13.8" />
         <path id="line-low-C" fill="none" stroke="#000" d="M32.9 44.1h13.8" />
         <path
             id="path137-9-2-7-05"
@@ -170,7 +192,7 @@
         stroke-miterlimit="10"
         stroke-opacity="1"
         stroke-width=".5"
-        d="M.3 39.3h154"
+        d={`M.3 39.3h${width}`}
     />
     <path
         id="lineG"
@@ -181,7 +203,7 @@
         stroke-miterlimit="10"
         stroke-opacity="1"
         stroke-width=".5"
-        d="M.3 34.5h154"
+        d={`M.3 34.5h${width}`}
     />
     <path
         id="lineB"
@@ -192,7 +214,7 @@
         stroke-miterlimit="10"
         stroke-opacity="1"
         stroke-width=".5"
-        d="M.3 29.7h154"
+        d={`M.3 29.7h${width}`}
     />
     <path
         id="lineD"
@@ -203,7 +225,7 @@
         stroke-miterlimit="10"
         stroke-opacity="1"
         stroke-width=".5"
-        d="M.3 25h154"
+        d={`M.3 25h${width}`}
     />
     <path
         id="lineF"
@@ -214,7 +236,7 @@
         stroke-miterlimit="10"
         stroke-opacity="1"
         stroke-width=".5"
-        d="M.3 20.1h154"
+        d={`M.3 20.1h${width}`}
     />
 
     <g
@@ -238,7 +260,7 @@
         fill-opacity="1"
         fill-rule="nonzero"
         stroke="none"
-        d="M153.6 39h1V19.9h-1zm0 0"
+        d={`M${width - 0.2} 39h1V19.9h-1zm0 0`}
     />
     <path
         id="end-clef-line-pre"
@@ -246,7 +268,7 @@
         fill-opacity="1"
         fill-rule="nonzero"
         stroke="none"
-        d="M151.1 39h1V19.9h-1zm0 0"
+        d={`M${width - 2.9} 39h1V19.9h-1zm0 0`}
     />
 
     <use xlink:href="#treble-clef-line" fill-rule="nonzero" />
@@ -256,58 +278,104 @@
         fill-rule="nonzero"
     />
 
+    {#each clusterSharps as s, i}
+        <g class="notes-line" transform="translate(2)">
+            <g class="notes-sub-line" transform="translate(-2.2, 16.2)">
+                {#if s.isLedger}
+                    <path
+                        d="M22.9 {s.y}h13.8"
+                        stroke="#000"
+                        stroke-width="0.5"
+                    />
+                {/if}
+            </g>
+
+            <g id="note_sharp" fill="#903" fill-opacity="1" stroke="none">
+                {#if s.accidental === "sharp"}
+                    <g
+                        id="note_sharp_{s.name}"
+                        style="line-height:125%"
+                        transform="matrix(.81 0 0 .81 -23.3 {s.y})"
+                    >
+                        <use
+                            xlink:href="#glyph-sharp"
+                            id="glyph-sharp-{s.uId}"
+                        />
+                    </g>
+                {/if}
+            </g>
+
+            <g
+                id="note_flat"
+                fill="#039"
+                fill-opacity="1"
+                stroke="none"
+                font-family="sans-serif"
+                font-size="11.5"
+            >
+                {#if s.accidental === "flat"}
+                    <g
+                        id="note_flat_{s.name}"
+                        style="line-height:125%"
+                        transform="matrix(.61 -.3 .11 1.58 -13 {s.y})"
+                    >
+                        <use
+                            xlink:href="#glyph-flat"
+                            id="glyph-flat-{s.uId}"
+                            style="-inkscape-font-specification:&quot;Goudy Stout&quot;"
+                        />
+                    </g>
+                {/if}
+            </g>
+
+            <g
+                id="notes_ronde"
+                fill="#7b339b"
+                fill-opacity="1"
+                stroke="none"
+                transform="translate(13.0)"
+            >
+                <g
+                    id="note_ronde_{s.name}"
+                    style="line-height:125%"
+                    transform="matrix(1 0 0 .97 9.6 {s.y + 16})"
+                >
+                    <use xlink:href="#glyph-ronde" id="glyph-ronde-{s.uId}" />
+                </g>
+            </g>
+        </g>
+    {/each}
+
     {#each sharps as s, i}
         <g class="notes-line" transform="translate({30.4 + i * 14})">
-            <g class="notes-sub-line" transform="translate(-9.5)">
-                <!-- Ledger lines logic -->
-                {#if s.y >= 35.7}
-                    <!-- G_low or lower -->
-                {/if}
-
-                {#if s.y > 41}
-                    <!-- C4 or lower -->
-                    <use
-                        xlink:href="#line-low-C"
-                        fill-opacity="1"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-miterlimit="10"
-                        stroke-opacity="1"
-                        stroke-width="1"
+            <g
+                class="notes-sub-line"
+                transform="translate(-2.2, 16.2)"
+                data-slotIndex={s.slotIndex}
+            >
+                <!-- Low Ledgers -->
+                <!-- C7 -->
+                {#if s.slotIndex <= 11}
+                    <path
+                        d="M22.9 {SLOTS[11].y}h13.8"
+                        stroke="#000"
+                        stroke-width="0.5"
                     />
                 {/if}
-                {#if s.y > 46}
-                    <!-- A3 or lower -->
-                    <use
-                        xlink:href="#line-low-A"
-                        fill-opacity="1"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-miterlimit="10"
-                        stroke-opacity="1"
-                        stroke-width="1"
+                <!-- A7 -->
+                {#if s.slotIndex <= 9}
+                    <path
+                        d="M22.9 {SLOTS[9].y}h13.8"
+                        stroke="#000"
+                        stroke-width="0.5"
                     />
                 {/if}
-
-                <!-- High ledger lines -->
-                {#if s.y < 17}
-                    <!-- A5 or higher -->
-                    <!-- Draw horizontal line at ~16.5, ~11.6?
-                    Original SVG didn't seem to have dynamic high ledger lines in the definition part,
-                    but the user wants to go up to A_high.
-                    A_high (y=16.5) is on a ledger line.
-                    C_high (y=11.6) is on a ledger line.
-                    E_high (y=6.6) is on a ledger line.
-               -->
-                    <path d="M22.9 16.5h13.8" stroke="#000" stroke-width="1" />
-                {/if}
-                {#if s.y < 12}
-                    <!-- C6 or higher -->
-                    <path d="M22.9 11.6h13.8" stroke="#000" stroke-width="1" />
-                {/if}
-                {#if s.y < 7}
-                    <!-- E6 or higher -->
-                    <path d="M22.9 6.6h13.8" stroke="#000" stroke-width="1" />
+                {#if s.slotIndex <= 7}
+                    <path
+                        d="M22.9 {SLOTS[7].y}h13.8"
+                        stroke="#000"
+                        stroke-width="0.5"
+                    />
                 {/if}
             </g>
 
@@ -366,4 +434,3 @@
         </g>
     {/each}
 </svg>
-```

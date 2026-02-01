@@ -219,6 +219,80 @@ export function getNoteForDegree(root: string, interval: string): DisplayNote {
     };
 }
 
+const CHORD_TONES: Record<string, string[]> = {
+    "maj": ["1", "3", "5", "7"],
+    "add2": ["1", "2", "3", "5"],
+    "add4": ["1", "3", "4", "5"],
+    "-": ["1", "b3", "5"],
+    "sus2": ["1", "2", "5"],
+    "5": ["1", "5"],
+    "sus4": ["1", "4", "5"],
+    "+": ["1", "3", "#5"],
+    "o7": ["1", "b3", "b5", "bb7"],
+    "o^7": ["1", "b3", "b5", "7"],
+    "o": ["1", "b3", "b5"],
+    "^7": ["1", "3", "5", "7"],
+    "^9": ["1", "3", "5", "7", "9"],
+    "^13": ["1", "3", "5", "7", "13"],
+    "6": ["1", "3", "5", "6"],
+    "69": ["1", "3", "5", "6", "9"],
+    "^7#11": ["1", "3", "5", "7", "#11"],
+    "^9#11": ["1", "3", "5", "7", "9", "#11"],
+    "^13#11": ["1", "3", "5", "7", "13", "#11"],
+    "^7#5": ["1", "3", "#5", "7"],
+    "^7b5": ["1", "3", "b5", "7"],
+    "^7#9": ["1", "3", "5", "7", "#9"],
+    "-7": ["1", "b3", "5", "b7"],
+    "-9": ["1", "b3", "5", "b7", "9"],
+    "-add2": ["1", "2", "b3", "5"],
+    "-add4": ["1", "b3", "4", "5"],
+    "-11": ["1", "b3", "5", "b7", "11"],
+    "-13": ["1", "b3", "5", "b7", "13"],
+    "-6": ["1", "b3", "5", "6"],
+    "-69": ["1", "b3", "5", "6", "9"],
+    "-b6": ["1", "b3", "5", "b6"],
+    "-#5": ["1", "b3", "#5"],
+    "-^7": ["1", "b3", "5", "7"],
+    "-^9": ["1", "b3", "5", "7", "9"],
+    "-^11": ["1", "b3", "5", "7", "11"],
+    "-^13": ["1", "b3", "5", "7", "13"],
+    "-7b6": ["1", "b3", "5", "b7", "b6"],
+    "-9b6": ["1", "b3", "5", "b7", "9", "b6"],
+    "7": ["1", "3", "5", "b7"],
+    "9": ["1", "3", "5", "b7", "9"],
+    "13": ["1", "3", "5", "b7", "13"],
+    "7add13": ["1", "3", "5", "b7", "13"],
+    "13#11": ["1", "3", "5", "b7", "#11", "13"],
+    "13#9": ["1", "3", "5", "b7", "#9", "13"],
+    "13b9": ["1", "3", "5", "b7", "b9", "13"],
+    "h7": ["1", "b3", "b5", "b7"],
+    "h9": ["1", "b3", "b5", "b7", "9"],
+    "13sus": ["1", "4", "5", "b7", "13"],
+    "7#11": ["1", "3", "5", "b7", "#11"],
+    "7b5": ["1", "3", "b5", "b7"],
+    "7#5": ["1", "3", "#5", "b7"],
+    "7b13": ["1", "3", "5", "b7", "b13"],
+    "7#9": ["1", "3", "5", "b7", "#9"],
+    "7#9#11": ["1", "3", "5", "b7", "#9", "#11"],
+    "7#9b5": ["1", "3", "b5", "b7", "#9"],
+    "7#9#5": ["1", "3", "#5", "b7", "#9"],
+    "7alt": ["1", "3", "b5", "b7", "b9", "b13"], // Approx
+    "7susb9b13": ["1", "4", "5", "b7", "b9", "b13"],
+    "7b9": ["1", "3", "5", "b7", "b9"],
+    "7b9#11": ["1", "3", "5", "b7", "b9", "#11"],
+    "7b9b5": ["1", "3", "b5", "b7", "b9"],
+    "7b9#5": ["1", "3", "#5", "b7", "b9"],
+    "7b9b13": ["1", "3", "5", "b7", "b9", "b13"],
+    "7b9#9": ["1", "3", "5", "b7", "b9", "#9"],
+    "7susb9": ["1", "4", "5", "b7", "b9"],
+    "7sus": ["1", "4", "5", "b7"],
+    "7susadd3": ["1", "4", "5", "b7", "3"],
+    "9#11": ["1", "3", "5", "b7", "9", "#11"],
+    "9b5": ["1", "3", "b5", "b7", "9"],
+    "9#5": ["1", "3", "#5", "b7", "9"],
+    "9sus": ["1", "4", "5", "b7", "9"]
+};
+
 export function getChordScale(chordStr: string): DisplayNote[] {
     const { root, quality } = parseChord(chordStr);
 
@@ -227,7 +301,7 @@ export function getChordScale(chordStr: string): DisplayNote[] {
     if (q === "") q = "maj";
 
     if (SCALES[q]) {
-        scaleName = SCALES[q][0]; // Pick first
+        scaleName = SCALES[q][0]; // Pick first for now
     } else {
         // console.log("Quality not found, default to Major");
         scaleName = "Major";
@@ -239,5 +313,33 @@ export function getChordScale(chordStr: string): DisplayNote[] {
     const degrees = patternStr.split('-');
     const notes: DisplayNote[] = degrees.map(d => getNoteForDegree(root, d));
 
+    return notes;
+}
+
+export function getScaleName(chordStr: string): string {
+    const { quality } = parseChord(chordStr);
+    let q = quality;
+    if (q === "") q = "maj";
+
+    if (SCALES[q]) {
+        return SCALES[q][0];
+    }
+    return "Major";
+}
+
+export function getChordTones(chordStr: string): DisplayNote[] {
+    const { root, quality } = parseChord(chordStr);
+    let q = quality;
+    if (q === "") q = "maj";
+
+    // Fallback if quality unknown
+    if (!CHORD_TONES[q]) {
+        // Try to match prefix?
+        // simple fallback
+        return [getNoteForDegree(root, "1")];
+    }
+
+    const degrees = CHORD_TONES[q];
+    const notes: DisplayNote[] = degrees.map(d => getNoteForDegree(root, d));
     return notes;
 }
