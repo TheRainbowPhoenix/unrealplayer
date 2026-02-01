@@ -69,6 +69,8 @@
 		duration: 200,
 		easing: sineIn,
 	};
+
+	let showChords = false;
 </script>
 
 <div class="flex h-screen overflow-hidden bg-gray-900 text-white font-sans">
@@ -145,7 +147,7 @@
 
 		<div class="flex-1 overflow-auto bg-[#FDF6E3] relative flex flex-col">
 			{#if selectedSong}
-				<Viewer song={selectedSong} />
+				<Viewer song={selectedSong} {showChords} />
 			{:else}
 				<div
 					class="flex items-center justify-center h-full text-gray-500"
@@ -157,7 +159,7 @@
 
 		<!-- ControlsOverlay -->
 		{#if selectedSong}
-			<Controls bind:song={selectedSong} />
+			<Controls bind:song={selectedSong} bind:showChords />
 		{/if}
 	</main>
 </div>

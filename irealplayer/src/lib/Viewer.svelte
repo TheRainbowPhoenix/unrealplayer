@@ -2,7 +2,10 @@
     import { Renderer, type Song } from "./parser";
     import { currentMeasureIndex } from "./store";
 
+    import Chords from "./Chords.svelte";
+
     export let song: Song;
+    export let showChords = false;
 
     let svgContent = "";
 
@@ -34,10 +37,20 @@
     }
 </script>
 
-<div class="w-full h-full flex justify-center items-start overflow-auto p-4">
+<div
+    class="w-full h-full flex justify-center items-start overflow-auto p-4 relative"
+>
     <div
         class="w-full max-w-4xl shadow-lg bg-white rounded-lg overflow-hidden transition-all duration-200"
     >
         {@html svgContent}
     </div>
+
+    {#if showChords}
+        <div
+            class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-sm p-4 rounded-xl shadow-2xl z-40 border border-gray-200 pointer-events-none"
+        >
+            <Chords />
+        </div>
+    {/if}
 </div>

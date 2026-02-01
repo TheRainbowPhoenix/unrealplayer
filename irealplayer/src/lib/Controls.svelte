@@ -14,6 +14,7 @@
         BackwardStepSolid,
         VolumeDownSolid,
         VolumeUpSolid,
+        GridSolid,
     } from "flowbite-svelte-icons";
     import {
         isPlaying,
@@ -26,6 +27,7 @@
     } from "./store";
 
     export let song: Song;
+    export let showChords = false;
 
     // Local state for UI
     let controlsVisible = false; // Drawer state
@@ -421,6 +423,16 @@
     class="fixed bottom-0 right-0 z-30 flex flex-col items-end pointer-events-none p-4"
 >
     <div class="pointer-events-auto flex flex-col gap-3">
+        <Button
+            pill
+            color="light"
+            class="!p-4 shadow-xl border border-gray-600 transform hover:scale-110 transition-transform mb-4"
+            onclick={() => (showChords = !showChords)}
+            title="Toggle Chords"
+        >
+            <GridSolid class="w-6 h-6 text-gray-700 dark:text-gray-300" />
+        </Button>
+
         <Button
             pill
             color="blue"
